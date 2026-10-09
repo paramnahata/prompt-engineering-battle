@@ -41,10 +41,14 @@ export async function POST(req: NextRequest) {
   // word counter alone can be bypassed via devtools.
   const { data: assignment } = await db
     .from('challenge_assignments')
-    .select('challenge_id')
+    .select('challenge_id, round_id')
     .eq('id', submission.assignment_id)
     .single();
   if (assignment) {
+    const { data: round } = await db.from('rounds').select('status').eq('id', assignment.round_id).single();
+    if (!round || round.status !== 'running') {
+      return NextResponse.json({ error: 'Round 1 has ended. Your changes can no longer be saved.', roundEnded: true }, { status: 409 });
+    }
     const { data: challenge } = await db
       .from('challenges')
       .select('prompt_word_limit, output_char_limit')
