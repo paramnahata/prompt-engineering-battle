@@ -5,22 +5,68 @@
 @layer base {
   html {
     color-scheme: dark;
+    scroll-behavior: smooth;
   }
   body {
     @apply bg-background text-foreground antialiased;
-    background-image: radial-gradient(circle at 20% -10%, rgba(124, 58, 237, 0.15), transparent 40%),
-      radial-gradient(circle at 90% 10%, rgba(34, 211, 238, 0.08), transparent 35%);
+    min-height: 100vh;
+    background-color: #070b17;
+    background-image:
+      radial-gradient(ellipse at 12% 0%, rgba(124, 58, 237, 0.2), transparent 34%),
+      radial-gradient(ellipse at 92% 12%, rgba(34, 211, 238, 0.11), transparent 32%),
+      linear-gradient(180deg, rgba(7, 11, 23, 0.1), #070b17 75%);
+    background-attachment: fixed;
+  }
+  ::selection {
+    background: rgba(139, 92, 246, 0.45);
+    color: white;
+  }
+  input, textarea, button {
+    font: inherit;
+  }
+  button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible {
+    outline: 2px solid rgba(103, 232, 249,  0.8);
+    outline-offset: 3px;
   }
 }
 
 @layer components {
   .peb-card {
-    @apply bg-card border border-border rounded-xl p-4;
+    @apply rounded-2xl border p-5 transition-colors;
+    background: linear-gradient(145deg, rgba(255,255,255,0.055), rgba(255,255,255,0.025));
+    border-color: rgba(255,255,255,0.1);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.12);
   }
   .peb-btn-primary {
-    @apply bg-accent hover:bg-accent/90 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors;
+    @apply inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-semibold text-white transition;
+    background: linear-gradient(110deg, #7c3aed, #4f46e5 52%, #0891b2);
+    box-shadow: 0 8px 24px rgba(79,70,229,0.22);
+  }
+  .peb-btn-primary:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+  }
+  .peb-btn-primary:disabled {
+    @apply cursor-not-allowed opacity-50;
+    filter: grayscale(0.25);
+    transform: none;
+    box-shadow: none;
   }
   .peb-btn-secondary {
-    @apply bg-surface hover:bg-surface/80 border border-border text-foreground rounded-lg px-4 py-2 text-sm font-medium transition-colors;
+    @apply inline-flex items-center justify-center rounded-xl border px-5 py-3 text-sm font-semibold transition;
+    background: rgba(255,255,255,0.045);
+    border-color: rgba(255,255,255,0.12);
+  }
+  .peb-btn-secondary:hover {
+    background: rgba(255,255,255,0.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
