@@ -122,6 +122,25 @@ export default function Round1Page() {
     fetchState();
   }, [fetchState]);
 
+  // Keep the arena in sync if the organizer stops or pauses the round.
+  useEffect(() => {
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch('/api/student/waiting/state', { cache: 'no-store' });
+        if (res.status === 401) {
+          router.replace('/student/login');
+          return;
+        }
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.status !== 'running') router.replace('/student/waiting');
+      } catch {
+        // A transient status check failure should not interrupt the challenge.
+      }
+    }, 10000);
+    return () => clearInterval(id);
+  }, [router]);
+
   const activeSubmission = submissions.find((s) => s.id === currentSubmissionId);
   const activeAssignment = assignments.find((a) => a.id === activeSubmission?.assignment_id);
   const allDone = assignments.length > 0 && !activeSubmission;
@@ -138,11 +157,20 @@ export default function Round1Page() {
     advancedRef.current = true;
     setAdvancing(true);
     try {
-      await fetch('/api/student/round1/advance', {
+      const res = await fetch('/api/student/round1/advance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ submissionId: activeSubmission.id }),
       });
+      const body = await res.json().catch(() => ({}));
+      if (body.roundEnded) {
+        router.replace('/student/waiting');
+        return;
+      }
+      if (!res.ok) {
+        setLoadError(body.error ?? 'Could not submit this challenge. Please retry.');
+        return;
+      }
       await fetchState();
     } finally {
       setAdvancing(false);
@@ -193,6 +221,16 @@ export default function Round1Page() {
           const body = await res.json().catch(() => ({}));
           setSaveState('over_limit');
           setLimitError(body.error ?? 'Over the limit for this challenge.');
+          return;
+        }
+        if (res.status === 409) {
+          const body = await res.json().catch(() => ({}));
+          if (body.roundEnded) {
+            router.replace('/student/waiting');
+            return;
+          }
+          setSaveState('offline');
+          setLimitError(body.error ?? 'This challenge is locked or its timer has expired.');
           return;
         }
         if (!res.ok) throw new Error('save failed');
