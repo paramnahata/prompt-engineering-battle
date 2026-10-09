@@ -5,6 +5,7 @@ import { getSession } from '@/lib/auth/session';
 const ALL_TILES = [
   { role: 'admin', href: '/admin/dashboard', label: 'Admin Dashboard', desc: 'Event control center' },
   { role: 'admin', href: '/admin/users', label: 'Accounts', desc: 'Create/reset/remove logins' },
+  { role: 'admin', href: '/admin/ai-settings', label: 'AI Judging & Gemini', desc: 'Securely configure the judging model' },
   { roles: ['admin', 'volunteer'], href: '/admin/attendance', label: 'Registration Desk', desc: 'CSV import, check-in, attendance' },
   { role: 'judge', href: '/judge/dashboard', label: 'Judge Dashboard', desc: 'Round 2 scoring' },
   { any: true, href: '/display', label: 'Projector / Display', desc: 'Open on the projector screen' },
