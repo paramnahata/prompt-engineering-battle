@@ -23,6 +23,9 @@ export async function POST() {
   if (round.status === 'running') {
     return NextResponse.json({ error: 'Round 1 is already running' }, { status: 409 });
   }
+  if (round.status === 'ended') {
+    return NextResponse.json({ error: 'Round 1 has ended and cannot be restarted. Reset the event before running it again.' }, { status: 409 });
+  }
 
   let assignmentResult;
   try {
