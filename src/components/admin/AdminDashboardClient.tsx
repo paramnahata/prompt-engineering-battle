@@ -18,6 +18,7 @@ export default function AdminDashboardClient() {
   const [stopping, setStopping] = useState(false);
   const [pausing, setPausing] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
@@ -88,6 +89,22 @@ export default function AdminDashboardClient() {
     }
   };
 
+  const startOver = async () => {
+    if (!confirm('START OVER will permanently delete Round 1 assignments, submissions, AI evaluations and manual score reviews. Registrations and attendance are kept. Continue?')) return;
+    if (!confirm('Final confirmation: erase Round 1 work and return the event to Not Started?')) return;
+    setResetting(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/admin/round1/reset', { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? 'Failed to reset Round 1.');
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to reset Round 1.');
+      await load();
+    } finally { setResetting(false); }
+  };
+
   const cards: { label: string; value: number }[] = stats
     ? [
         { label: 'Registered', value: stats.registered },
@@ -148,10 +165,11 @@ export default function AdminDashboardClient() {
             <button className="peb-btn-primary min-w-36 disabled:cursor-not-allowed disabled:opacity-50" onClick={startRound1} disabled={starting || stopping || pausing || resuming || running || paused || ended || !stats}>
               {starting ? 'Starting…' : 'Start Round 1'}
             </button>
-            <button className="min-w-36 rounded-lg border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40" onClick={stopRound1} disabled={stopping || starting || !running}>
+            <button className="min-w-36 rounded-lg border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40" onClick={stopRound1} disabled={stopping || starting || pausing || resuming || resetting || !running}>
               {stopping ? 'Stopping…' : 'Stop'}
             </button>
             {running && <button className="min-w-28 rounded-lg border border-amber-400/30 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-200 disabled:opacity-40" onClick={() => controlRound1('pause')} disabled={pausing || resuming || stopping || starting}>{pausing ? 'Pausing…' : 'Pause'}</button>}
+            {ended && <button className="min-w-32 rounded-lg border border-violet-400/30 bg-violet-500/10 px-4 py-2 text-sm font-semibold text-violet-200 disabled:opacity-40" onClick={startOver} disabled={resetting || starting || stopping || pausing || resuming}>{resetting ? 'Resetting…' : 'Start Over'}</button>}
             {paused && <button className="min-w-28 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200 disabled:opacity-40" onClick={() => controlRound1('resume')} disabled={pausing || resuming || stopping || starting}>{resuming ? 'Resuming…' : 'Resume'}</button>}
           </div>
         </div>
