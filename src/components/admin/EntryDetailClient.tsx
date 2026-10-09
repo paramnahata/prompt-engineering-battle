@@ -7,7 +7,7 @@ interface PSRow {
     id: string;
     position: number;
     is_common: boolean;
-    challenges: { title: string; problem_statement: string; prompt_word_limit: number; output_char_limit: number };
+    challenges: { title: string; problem_statement: string; prompt_word_limit: number; output_char_limit: number } | null;
   };
   submission: {
     id: string;
@@ -48,7 +48,10 @@ export default function EntryDetailClient({ entryId }: { entryId: string }) {
         return;
       }
       setEntry(body.entry);
-      setPs(body.ps);
+      setPs(Array.isArray(body.ps) ? body.ps : []);
+      setError(null);
+    } catch {
+      setError('Could not load this entry. Refresh the page and try again.');
     } finally {
       setLoading(false);
     }
@@ -85,7 +88,8 @@ export default function EntryDetailClient({ entryId }: { entryId: string }) {
   };
 
   if (loading) return <p className="text-muted text-sm">Loading…</p>;
-  if (error) return <p className="text-sm text-red-400">{error}</p>;
+  if (error) return <div className="text-sm text-red-400">{error}<button className="ml-3 underline" onClick={() => void load()}>Retry</button></div>;
+  if (!entry) return <p className="text-sm text-muted">Entry not found.</p>;
 
   return (
     <div className="max-w-3xl flex flex-col gap-4">
@@ -115,7 +119,7 @@ export default function EntryDetailClient({ entryId }: { entryId: string }) {
                 <div className="text-xs text-muted">
                   PS {row.assignment.position} {row.assignment.is_common && '(common)'}
                 </div>
-                <div className="font-medium">{row.assignment.challenges.title}</div>
+                <div className="font-medium">{row.assignment.challenges?.title ?? 'Challenge unavailable'}</div>
               </div>
               <span
                 className={`text-xs px-2 py-1 rounded-full ${
@@ -130,7 +134,7 @@ export default function EntryDetailClient({ entryId }: { entryId: string }) {
               </span>
             </div>
 
-            <p className="text-xs text-muted whitespace-pre-wrap mb-3">{row.assignment.challenges.problem_statement}</p>
+            <p className="text-xs text-muted whitespace-pre-wrap mb-3">{row.assignment.challenges?.problem_statement ?? 'The challenge linked to this assignment is no longer available.'}</p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
               <div>
