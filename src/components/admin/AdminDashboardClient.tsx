@@ -101,7 +101,7 @@ export default function AdminDashboardClient() {
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {slots.map((c, i) => (
+        {slots.map((c) => (
           <div key={c.label} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-lg shadow-black/10">
             <div className="mb-3 h-1 w-10 rounded-full bg-gradient-to-r from-violet-400 to-cyan-300" />
             <div className="text-3xl font-bold tabular-nums text-white">{stats ? c.value : '—'}</div>
