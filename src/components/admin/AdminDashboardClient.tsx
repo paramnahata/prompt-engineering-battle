@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 interface Stats {
   registered: number;
@@ -15,32 +15,56 @@ interface Stats {
 export default function AdminDashboardClient() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
-  const load = () => fetch('/api/display/stats').then((r) => r.json()).then(setStats).catch(() => {});
-
-  useEffect(() => {
-    load();
-    const id = setInterval(load, 10_000);
-    return () => clearInterval(id);
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch('/api/display/stats', { cache: 'no-store' });
+      if (!res.ok) throw new Error('Unable to refresh dashboard statistics.');
+      setStats(await res.json());
+      setLastUpdated(new Date().toLocaleTimeString());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Dashboard refresh failed.');
+    }
   }, []);
 
+  useEffect(() => {
+    void load();
+    const id = setInterval(() => { void load(); }, 5000);
+    return () => clearInterval(id);
+  }, [load]);
+
   const startRound1 = async () => {
-    if (!confirm('Start Round 1 now? This assigns challenges to every present entry and starts the 30-minute clock for everyone.')) {
-      return;
-    }
+    if (!confirm('Start Round 1 now? This assigns challenges to present entries and starts the official timer.')) return;
     setStarting(true);
-    setStartError(null);
+    setError(null);
     try {
       const res = await fetch('/api/admin/round1/start', { method: 'POST' });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setStartError(body.error ?? 'Failed to start Round 1');
-        return;
-      }
-      load();
+      if (!res.ok) throw new Error(body.error ?? 'Failed to start Round 1.');
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to start Round 1.');
     } finally {
       setStarting(false);
+    }
+  };
+
+  const stopRound1 = async () => {
+    if (!confirm('Stop Round 1 now? Students will be returned to the waiting room and cannot continue this round. This action ends the round.')) return;
+    setStopping(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/admin/round1/stop', { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? 'Failed to stop Round 1.');
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to stop Round 1.');
+    } finally {
+      setStopping(false);
     }
   };
 
@@ -54,50 +78,69 @@ export default function AdminDashboardClient() {
       ]
     : [];
 
-  const slots: { label: string; value: number | null }[] = stats
-    ? cards
-    : [
-        { label: 'Registered', value: null },
-        { label: 'Present', value: null },
-        { label: 'Submitted', value: null },
-        { label: 'Evaluated', value: null },
-        { label: 'Qualified', value: null },
-      ];
+  const status = stats?.round1Status ?? 'loading';
+  const running = status === 'running';
+  const ended = status === 'ended';
+  const slots = stats ? cards : [
+    { label: 'Registered', value: 0 },
+    { label: 'Present', value: 0 },
+    { label: 'Submitted', value: 0 },
+    { label: 'Evaluated', value: 0 },
+    { label: 'Qualified', value: 0 },
+  ];
 
   return (
-    <div className="max-w-3xl">
-      <h1 className="text-2xl font-semibold mb-6">Admin Dashboard</h1>
+    <div className="mx-auto max-w-5xl">
+      <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.28em] text-cyan-300">Event control center</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Admin Dashboard</h1>
+          <p className="mt-2 text-sm text-muted">Live competition overview and Round 1 controls.</p>
+        </div>
+        <div className="text-xs text-muted">{lastUpdated ? `Updated ${lastUpdated}` : 'Connecting to live stats…'}</div>
+      </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
-        {slots.map((c) => (
-          <div key={c.label} className="peb-card text-center py-4">
-            <div className="text-2xl font-bold text-accent-cyan">{c.value ?? '—'}</div>
-            <div className="text-xs text-muted uppercase tracking-wide mt-1">{c.label}</div>
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {slots.map((c, i) => (
+          <div key={c.label} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-lg shadow-black/10">
+            <div className="mb-3 h-1 w-10 rounded-full bg-gradient-to-r from-violet-400 to-cyan-300" />
+            <div className="text-3xl font-bold tabular-nums text-white">{stats ? c.value : '—'}</div>
+            <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{c.label}</div>
           </div>
         ))}
       </div>
 
-      <div className="peb-card mb-6 flex items-center justify-between">
-        <div>
-          <div className="font-medium">Round 1</div>
-          <div className="text-sm text-muted capitalize">Status: {stats?.round1Status.replace('_', ' ') ?? '…'}</div>
-          {startError && <div className="text-sm text-red-400 mt-1">{startError}</div>}
+      <section className="mb-6 overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-violet-950/60 via-slate-900/80 to-cyan-950/40 p-5 shadow-2xl shadow-violet-950/20 sm:p-7">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-xl font-bold">Round 1 · Prompt Arena</h2>
+              <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wider ${running ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300' : ended ? 'border-slate-400/30 bg-slate-400/10 text-slate-300' : 'border-amber-400/30 bg-amber-400/10 text-amber-200'}`}>
+                {status.replace('_', ' ')}
+              </span>
+            </div>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
+              {running ? 'Round is live. Students can work on their assigned challenges.' : ended ? 'This round is closed. Start is disabled to protect submitted work.' : 'Check attendance and challenge assignments before opening the round.'}
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button className="peb-btn-primary min-w-36 disabled:cursor-not-allowed disabled:opacity-50" onClick={startRound1} disabled={starting || stopping || running || ended || !stats}>
+              {starting ? 'Starting…' : 'Start Round 1'}
+            </button>
+            <button className="min-w-36 rounded-lg border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40" onClick={stopRound1} disabled={stopping || starting || !running}>
+              {stopping ? 'Stopping…' : 'Stop Round 1'}
+            </button>
+          </div>
         </div>
-        <button
-          className="peb-btn-primary"
-          onClick={startRound1}
-          disabled={starting || stats?.round1Status === 'running' || stats?.round1Status === 'ended'}
-        >
-          {starting ? 'Starting…' : stats?.round1Status === 'running' ? 'Running' : 'Start Round 1'}
-        </button>
-      </div>
+        {error && <div role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</div>}
+      </section>
 
-      <Link href="/admin/entries" className="peb-card hover:border-accent transition-colors flex items-center justify-between">
+      <Link href="/admin/entries" className="group flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition hover:border-cyan-300/40 hover:bg-white/[0.06]">
         <div>
-          <div className="font-medium">Entries</div>
-          <div className="text-sm text-muted">View any entry's PS, prompt, output, and scores</div>
+          <div className="font-semibold">Participant entries</div>
+          <div className="mt-1 text-sm text-muted">Inspect prompts, generated outputs and evaluation scores.</div>
         </div>
-        <span className="text-accent-cyan text-sm">→</span>
+        <span className="text-xl text-cyan-300 transition group-hover:translate-x-1">→</span>
       </Link>
     </div>
   );
