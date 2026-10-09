@@ -36,7 +36,7 @@ function wordCount(text: string): number {
 
 function BattleIntro({ onDone }: { onDone: () => void }) {
   useEffect(() => {
-    const t = setTimeout(onDone, 2600);
+    const t = setTimeout(onDone, 800);
     return () => clearTimeout(t);
   }, [onDone]);
 
@@ -259,22 +259,31 @@ export default function Round1Page() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border px-6 py-3 flex items-center justify-between sticky top-0 bg-background/95 backdrop-blur z-10">
+      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-slate-950/85 px-5 py-4 backdrop-blur-xl sm:px-8">
         <div>
-          <div className="text-sm text-muted">PROMPT ENGINEERING BATTLE — Round 1</div>
-          <div className="text-lg font-semibold">Challenge {activeAssignment.position} of 4</div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-300">Prompt Engineering Battle · Live Arena</div>
+          <div className="mt-1 text-lg font-bold sm:text-xl">Challenge {activeAssignment.position} <span className="font-normal text-slate-500">/ 4</span></div>
         </div>
         <div className="text-right">
           <div className={`text-2xl font-mono ${secondsLeft !== null && secondsLeft < 30 ? 'text-red-400 animate-pulse-glow' : ''}`}>
             {secondsLeft !== null ? formatMMSS(secondsLeft) : '--:--'}
           </div>
-          {offline && <div className="text-xs text-amber-400">Offline — changes saved locally</div>}
+          {offline && <div className="text-xs text-amber-400">Connection issue · retrying</div>}
         </div>
       </header>
 
-      <main className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-6 max-w-7xl mx-auto">
+      <div className="mx-auto max-w-7xl px-5 pt-5 sm:px-8">
+        <div className="mb-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+          <span>Challenge progress</span><span>{Math.round((activeAssignment.position / 4) * 100)}%</span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+          <div className="h-full rounded-full bg-gradient-to-r from-violet-500 via-indigo-400 to-cyan-300 transition-all duration-500" style={{ width: `${(activeAssignment.position / 4) * 100}%` }} />
+        </div>
+      </div>
+
+      <main className="mx-auto grid max-w-7xl grid-cols-1 gap-5 p-5 lg:grid-cols-2 lg:gap-6 sm:p-8">
         <section className="peb-card">
-          <h2 className="font-semibold mb-2">{activeAssignment.challenge.title}</h2>
+          <div className="mb-4 flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300">Challenge brief</p><h2 className="mt-2 text-xl font-bold tracking-tight">{activeAssignment.challenge.title}</h2></div><span className="rounded-xl border border-violet-300/20 bg-violet-300/10 px-3 py-2 text-xs font-semibold text-violet-200">#{activeAssignment.position}</span></div>
           <p className="text-sm text-muted whitespace-pre-wrap mb-3">{activeAssignment.challenge.problem_statement}</p>
           {activeAssignment.challenge.instructions && (
             <>
@@ -303,7 +312,7 @@ export default function Round1Page() {
               </span>
             </div>
             <textarea
-              className={`w-full h-40 bg-surface border rounded-lg p-3 text-sm resize-none focus:outline-none focus:ring-1 ${
+              className={`mt-2 w-full h-44 rounded-xl border bg-slate-950/70 p-4 text-sm leading-6 resize-y focus:outline-none focus:ring-1 ${
                 overWordLimit ? 'border-red-500 focus:ring-red-500' : 'border-border focus:ring-accent'
               }`}
               value={draftPrompt}
