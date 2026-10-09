@@ -71,6 +71,8 @@ function BattleIntro({ onDone }: { onDone: () => void }) {
 export default function Round1Page() {
   const router = useRouter();
   const [showIntro, setShowIntro] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [assignments, setAssignments] = useState<AssignmentVM[]>([]);
   const [submissions, setSubmissions] = useState<SubmissionVM[]>([]);
   const [currentSubmissionId, setCurrentSubmissionId] = useState<string | null>(null);
@@ -82,23 +84,39 @@ export default function Round1Page() {
   const advancedRef = useRef(false);
 
   const fetchState = useCallback(async () => {
+    setLoadError(null);
     try {
-      const res = await fetch('/api/student/round1/state');
-      const data = await res.json();
-      setServerNowIso(data.serverNow);
-      if (data.assignments) setAssignments(data.assignments);
-      if (data.submissions) setSubmissions(data.submissions);
+      const res = await fetch('/api/student/round1/state', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        router.replace('/student/login');
+        return null;
+      }
+      if (!res.ok) throw new Error(data.error ?? 'Could not load your challenge.');
+      if (data.roundStatus && data.roundStatus !== 'running') {
+        router.replace('/student/waiting');
+        return null;
+      }
+      setServerNowIso(data.serverNow ?? null);
+      setAssignments(data.assignments ?? []);
+      setSubmissions(data.submissions ?? []);
       setCurrentSubmissionId(data.currentSubmissionId ?? null);
       setOffline(false);
+      if (!(data.assignments ?? []).length) {
+        setLoadError('No challenges are assigned to this entry yet. Please ask the organizer to check your attendance and assignments.');
+      }
       const activeSub = (data.submissions ?? []).find((s: SubmissionVM) => s.id === data.currentSubmissionId);
       return activeSub?.question_end_at
         ? { endAtIso: activeSub.question_end_at as string, serverNowIso: data.serverNow as string }
         : null;
-    } catch {
+    } catch (err) {
       setOffline(true);
+      setLoadError(err instanceof Error ? err.message : 'Connection issue while loading the challenge.');
       return null;
+    } finally {
+      setLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     fetchState();
@@ -183,7 +201,7 @@ export default function Round1Page() {
       } catch {
         setSaveState('offline');
       }
-    }, 5000);
+    }, 1500);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
@@ -221,7 +239,22 @@ export default function Round1Page() {
   }
 
   if (!activeAssignment || !activeSubmission) {
-    return <div className="min-h-screen flex items-center justify-center text-muted">Loading challenge…</div>;
+    return (
+      <main className="min-h-screen flex items-center justify-center p-6">
+        <section className="w-full max-w-lg rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center shadow-2xl shadow-violet-950/30">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/15 text-2xl text-violet-200">
+            {loading ? '…' : loadError ? '!' : '✓'}
+          </div>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Prompt Engineering Battle</p>
+          <h1 className="mt-3 text-2xl font-bold">{loading ? 'Preparing your arena' : loadError ? 'Challenge unavailable' : 'Round completed'}</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-400">
+            {loading ? 'Syncing your assigned challenges and saved work…' : loadError ?? 'Your submissions are complete. Redirecting to your result screen.'}
+          </p>
+          {loadError && <button className="peb-btn-primary mt-6 w-full" onClick={() => { setLoading(true); void fetchState(); }}>Retry loading</button>}
+          {!loading && !loadError && <button className="peb-btn-secondary mt-6 w-full" onClick={() => router.replace('/student/waiting')}>Return to waiting room</button>}
+        </section>
+      </main>
+    );
   }
 
   return (
