@@ -13,22 +13,23 @@ export async function POST() {
     .from('rounds').select('id, status').eq('round_number', 1).single();
 
   if (roundError || !round) return NextResponse.json({ error: 'Round 1 not found' }, { status: 404 });
-  if (round.status !== 'running') {
-    return NextResponse.json({ error: 'Round 1 is not currently running.' }, { status: 409 });
+  if (round.status !== 'running' && round.status !== 'paused') {
+    return NextResponse.json({ error: 'Round 1 must be running or paused to stop it.' }, { status: 409 });
   }
+  const previousStatus = round.status;
 
   const stoppedAt = new Date().toISOString();
   const { error: updateError } = await db.from('rounds')
     .update({ status: 'ended', round_end_at: stoppedAt })
     .eq('id', round.id)
-    .eq('status', 'running');
+    .eq('status', previousStatus);
 
   if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
 
   await db.from('admin_actions').insert({
     admin_id: session.userId,
     action: 'stop_round1',
-    old_value: { status: 'running' },
+    old_value: { status: previousStatus },
     new_value: { status: 'ended', stopped_at: stoppedAt },
   });
   await db.from('announcements').insert({
