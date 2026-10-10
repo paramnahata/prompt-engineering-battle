@@ -225,7 +225,7 @@ export default function Round1Page() {
         }
         if (res.status === 409) {
           const body = await res.json().catch(() => ({}));
-          if (body.roundEnded) {
+          if (body.roundEnded || body.roundPaused) {
             router.replace('/student/waiting');
             return;
           }
