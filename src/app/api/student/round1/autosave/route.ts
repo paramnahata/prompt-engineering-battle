@@ -46,8 +46,14 @@ export async function POST(req: NextRequest) {
     .single();
   if (assignment) {
     const { data: round } = await db.from('rounds').select('status').eq('id', assignment.round_id).single();
-    if (!round || round.status !== 'running') {
+    if (!round || round.status === 'ended' || round.status === 'not_started') {
       return NextResponse.json({ error: 'Round 1 has ended. Your changes can no longer be saved.', roundEnded: true }, { status: 409 });
+    }
+    if (round.status === 'paused') {
+      return NextResponse.json({ error: 'Round 1 is paused. Your draft has not been changed; wait for the organizer to resume.', roundPaused: true }, { status: 409 });
+    }
+    if (round.status !== 'running') {
+      return NextResponse.json({ error: 'Round status is unavailable. Please wait and retry.' }, { status: 409 });
     }
     const { data: challenge } = await db
       .from('challenges')
@@ -73,19 +79,22 @@ export async function POST(req: NextRequest) {
 
   const now = new Date().toISOString();
 
-  await db
+  const { error: saveError } = await db
     .from('submissions')
     .update({ prompt_text: promptText, ai_output_text: aiOutputText, last_saved_at: now })
-    .eq('id', submissionId);
+    .eq('id', submissionId)
+    .eq('status', 'draft');
+  if (saveError) return NextResponse.json({ error: 'Could not save your draft. Please retry.' }, { status: 500 });
 
   // Keep a lightweight version trail (not on every keystroke — this route
   // itself is already called at most every ~5s by the client debounce).
-  await db.from('submission_versions').insert({
+  const { error: versionError } = await db.from('submission_versions').insert({
     submission_id: submissionId,
     prompt_text: promptText,
     ai_output_text: aiOutputText,
     saved_at: now,
   });
+  if (versionError) return NextResponse.json({ error: 'Draft was saved, but its version history could not be recorded.' }, { status: 500 });
 
   return NextResponse.json({ savedAt: now });
 }
