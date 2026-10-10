@@ -165,7 +165,7 @@ export default function AdminDashboardClient() {
             <button className="peb-btn-primary min-w-36 disabled:cursor-not-allowed disabled:opacity-50" onClick={startRound1} disabled={starting || stopping || pausing || resuming || running || paused || ended || !stats}>
               {starting ? 'Starting…' : 'Start Round 1'}
             </button>
-            <button className="min-w-36 rounded-lg border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40" onClick={stopRound1} disabled={stopping || starting || pausing || resuming || resetting || !running}>
+            <button className="min-w-36 rounded-lg border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40" onClick={stopRound1} disabled={stopping || starting || pausing || resuming || resetting || (!running && !paused)}>
               {stopping ? 'Stopping…' : 'Stop'}
             </button>
             {running && <button className="min-w-28 rounded-lg border border-amber-400/30 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-200 disabled:opacity-40" onClick={() => controlRound1('pause')} disabled={pausing || resuming || stopping || starting}>{pausing ? 'Pausing…' : 'Pause'}</button>}
