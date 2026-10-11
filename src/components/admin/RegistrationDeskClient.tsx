@@ -475,13 +475,17 @@ function ParticipantsTable({ refreshKey, onReset }: { refreshKey: number; onRese
                         {e.team_members
                           ?.sort((a, b) => a.member_position - b.member_position)
                           .map((m) => (
-                            <div key={m.member_position} className="text-xs">{m.full_name}</div>
-                            <div key={`${m.member_position}-contact`} className="text-xs text-muted">{[m.email, m.phone].filter(Boolean).join(' · ')}</div>
+                            <div key={m.member_position}>
+                              <div className="text-xs">{m.full_name}</div>
+                              <div className="text-xs text-muted">{[m.email, m.phone].filter(Boolean).join(' · ') || 'Email/phone not provided'}</div>
+                            </div>
                           ))}
                       </>
                     ) : (
-                      <span className="text-foreground">{e.team_members?.[0]?.full_name}</span>
-                      <div className="text-xs text-muted">{[e.team_members?.[0]?.email, e.team_members?.[0]?.phone].filter(Boolean).join(' · ')}</div>
+                      <>
+                        <span className="text-foreground">{e.team_members?.[0]?.full_name}</span>
+                        <div className="text-xs text-muted">{[e.team_members?.[0]?.email, e.team_members?.[0]?.phone].filter(Boolean).join(' · ') || 'Email/phone not provided'}</div>
+                      </>
                     )}
                   </td>
                   <td className="py-2 pr-3">
