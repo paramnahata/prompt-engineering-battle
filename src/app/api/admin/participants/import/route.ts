@@ -11,8 +11,10 @@ const bodySchema = z.object({
     team_name: z.string().optional(),
     member1_name: z.string(),
     member1_email: z.string().optional(),
+    member1_phone: z.string().optional(),
     member2_name: z.string().optional(),
     member2_email: z.string().optional(),
+    member2_phone: z.string().optional(),
   }),
   mode: z.enum(['preview', 'confirm']),
 });
@@ -86,9 +88,9 @@ export async function POST(req: NextRequest) {
   const memberRows = toInsert.flatMap((row) => {
     const entryId = idByRegistrationId.get(row.registration_id!);
     if (!entryId) return [];
-    const rows = [{ entry_id: entryId, member_position: 1, full_name: row.member1_name!, email: row.member1_email || null }];
+    const rows = [{ entry_id: entryId, member_position: 1, full_name: row.member1_name!, email: row.member1_email || null, phone: row.member1_phone || null }];
     if (row.member2_name) {
-      rows.push({ entry_id: entryId, member_position: 2, full_name: row.member2_name, email: row.member2_email || null });
+      rows.push({ entry_id: entryId, member_position: 2, full_name: row.member2_name, email: row.member2_email || null, phone: row.member2_phone || null });
     }
     return rows;
   });
