@@ -492,8 +492,8 @@ function ParticipantsTable({ refreshKey, onReset }: { refreshKey: number; onRese
                       ) : '—'}
                     </td>
                     <td className="py-3 pr-3 whitespace-nowrap">
-                      <span className={e.checked_in_at ? 'text-green-400' : 'text-amber-400'}>
-                        {e.checked_in_at ? 'PRESENT' : 'NOT CHECKED IN'}
+                      <span className={e.present ? 'text-green-400' : 'text-amber-400'}>
+                        {e.present ? 'PRESENT' : 'NOT CHECKED IN'}
                       </span>
                     </td>
                   </tr>
