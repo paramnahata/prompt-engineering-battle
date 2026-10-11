@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useServerCountdown } from '@/hooks/useServerCountdown';
 import { formatMMSS } from '@/lib/timer';
+import LogoutButton from '@/components/auth/LogoutButton';
 
 interface AssignmentVM {
   id: string;
@@ -163,6 +164,10 @@ export default function Round1Page() {
         body: JSON.stringify({ submissionId: activeSubmission.id }),
       });
       const body = await res.json().catch(() => ({}));
+      if (body.timerNotExpired) {
+        setLoadError(null);
+        return;
+      }
       if (body.roundEnded) {
         router.replace('/student/waiting');
         return;
@@ -269,7 +274,7 @@ export default function Round1Page() {
   }, []);
 
   const blockClipboard = (e: React.ClipboardEvent) => e.preventDefault();
-  const canAdvance = !overWordLimit && !overCharLimit && !advancing;
+  const canAdvance = !overWordLimit && !overCharLimit && !advancing && secondsLeft === 0;
   const isLastChallenge = activeAssignment?.position === 4;
 
   if (showIntro) {
@@ -302,12 +307,12 @@ export default function Round1Page() {
           <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-300">Prompt Engineering Battle · Live Arena</div>
           <div className="mt-1 text-lg font-bold sm:text-xl">Challenge {activeAssignment.position} <span className="font-normal text-slate-500">/ 4</span></div>
         </div>
-        <div className="text-right">
+        <div className="flex items-center gap-4"><div className="text-right">
           <div className={`text-2xl font-mono ${secondsLeft !== null && secondsLeft < 30 ? 'text-red-400 animate-pulse-glow' : ''}`}>
             {secondsLeft !== null ? formatMMSS(secondsLeft) : '--:--'}
           </div>
           {offline && <div className="text-xs text-amber-400">Connection issue · retrying</div>}
-        </div>
+        </div><LogoutButton /></div>
       </header>
 
       <div className="mx-auto max-w-7xl px-5 pt-5 sm:px-8">
@@ -392,7 +397,7 @@ export default function Round1Page() {
               {saveState === 'over_limit' && <span className="text-red-400">{limitError}</span>}
             </span>
             <button className="peb-btn-primary" onClick={advance} disabled={!canAdvance}>
-              {advancing ? 'Submitting…' : isLastChallenge ? 'Final Submit' : 'Save & Next'}
+              {advancing ? 'Submitting…' : secondsLeft !== null && secondsLeft > 0 ? `Wait ${formatMMSS(secondsLeft)}` : isLastChallenge ? 'Final Submit' : 'Save & Next'}
             </button>
           </div>
           <p className="text-xs text-muted text-right">Once you move on, you can't come back to this challenge.</p>

@@ -65,7 +65,7 @@ export default function StudentLoginPage() {
               <input
                 id="entryCode"
                 className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900/80 p-3.5 text-sm placeholder:text-slate-600 focus:border-violet-300/50 focus:outline-none focus:ring-2 focus:ring-violet-400/10"
-                placeholder="e.g. ENTRY-001"
+                placeholder="Enter your number (e.g. 1)"
                 autoCapitalize="characters"
                 autoComplete="username"
                 value={entryCode}
@@ -78,11 +78,13 @@ export default function StudentLoginPage() {
               <input
                 id="accessCode"
                 className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900/80 p-3.5 text-sm placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none focus:ring-2 focus:ring-cyan-400/10"
-                placeholder="6-digit code"
+                placeholder="4-digit code"
                 inputMode="numeric"
+                maxLength={4}
+                pattern="[0-9]{4}"
                 autoComplete="one-time-code"
                 value={accessCode}
-                onChange={(e) => setAccessCode(e.target.value)}
+                onChange={(e) => setAccessCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
                 required
               />
             </div>

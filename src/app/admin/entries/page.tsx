@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireRole } from '@/lib/auth/session';
 import EntriesListClient from '@/components/admin/EntriesListClient';
+import LogoutButton from '@/components/auth/LogoutButton';
 
 export default function EntriesPage() {
   const session = requireRole('admin');
@@ -9,7 +10,7 @@ export default function EntriesPage() {
 
   return (
     <main className="min-h-screen p-8">
-      <Link href="/organizer/hub" className="text-xs text-muted hover:text-foreground mb-4 inline-block">← Organizer Hub</Link>
+      <div className="mb-4 flex items-center justify-between"><Link href="/organizer/hub" className="text-xs text-muted hover:text-foreground inline-block">← Organizer Hub</Link><LogoutButton /></div>
       <EntriesListClient />
     </main>
   );
