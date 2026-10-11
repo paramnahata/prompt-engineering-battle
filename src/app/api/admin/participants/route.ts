@@ -12,7 +12,7 @@ export async function GET() {
   const db = supabaseAdmin();
   const { data: entries, error } = await db
     .from('entries')
-    .select('id, entry_code, team_name, is_team, payment_status, present, disqualified, created_at, team_members(member_position, full_name)')
+    .select('id, entry_code, team_name, is_team, payment_status, present, disqualified, created_at, team_members(member_position, full_name, email, phone)')
     .order('entry_code', { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
