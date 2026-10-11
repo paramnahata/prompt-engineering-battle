@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireAnyRole } from '@/lib/auth/session';
+import { requireRole } from '@/lib/auth/session';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { applyMappingAndValidate, nextEntryCode } from '@/lib/csv/import';
 
@@ -18,7 +18,7 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const session = requireAnyRole(['admin', 'volunteer']);
+  const session = requireRole('admin');
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const parsed = bodySchema.safeParse(await req.json());
