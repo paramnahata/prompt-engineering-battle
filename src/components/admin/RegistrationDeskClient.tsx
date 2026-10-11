@@ -136,7 +136,7 @@ function LookupPanel() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <div>
-              <div className="font-semibold text-lg">{Number(entry.entry_code.replace(/\\D/g, '')) || entry.entry_code}</div>
+              <div className="font-semibold text-lg">{Number(entry.entry_code.replace(/\D/g, '')) || entry.entry_code}</div>
               <div className="text-sm text-muted">
                 {entry.is_team ? entry.team_name || 'Unnamed team' : entry.team_members?.[0]?.full_name}
               </div>
@@ -475,7 +475,7 @@ function ParticipantsTable({ refreshKey, onReset }: { refreshKey: number; onRese
                 const second = members[1];
                 return (
                   <tr key={e.id} className="border-b border-border/50 align-top">
-                    <td className="py-3 pr-3 font-medium whitespace-nowrap">{Number(e.entry_code.replace(/\\D/g, '')) || e.entry_code}</td>
+                    <td className="py-3 pr-3 font-medium whitespace-nowrap">{Number(e.entry_code.replace(/\D/g, '')) || e.entry_code}</td>
                     <td className="py-3 pr-3">{e.is_team ? (e.team_name || 'Unnamed team') : 'Individual'}</td>
                     <td className="py-3 pr-3">{first?.full_name || '—'}</td>
                     <td className="py-3 pr-3 text-xs text-muted">
