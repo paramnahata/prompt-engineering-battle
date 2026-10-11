@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import LogoutButton from '@/components/auth/LogoutButton';
 
 type RoundStatus = 'not_started' | 'running' | 'paused' | 'ended' | string;
 
@@ -39,6 +40,7 @@ export default function WaitingPage() {
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden p-6">
       <div className="pointer-events-none absolute left-1/2 top-1/4 h-72 w-72 -translate-x-1/2 rounded-full bg-violet-600/20 blur-[100px]" />
+      <div className="absolute right-4 top-4 z-10"><LogoutButton /></div>
       <section className="relative w-full max-w-xl rounded-[2rem] border border-white/10 bg-slate-950/70 p-8 text-center shadow-2xl shadow-violet-950/30 backdrop-blur-xl sm:p-12">
         <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-violet-500/20 to-cyan-500/10 text-2xl">
           {ended ? '✓' : paused ? 'Ⅱ' : '⚡'}
