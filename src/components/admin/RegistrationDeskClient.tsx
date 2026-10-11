@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Papa from 'papaparse';
 import AccessCodePanel from './AccessCodePanel';
+import { normalizeCsvText } from '@/lib/csv/import';
 
 interface TeamMember {
   member_position: number;
@@ -194,14 +195,14 @@ function CsvImportPanel({ onImported }: { onImported: () => void }) {
     setError(null);
     const reader = new FileReader();
     reader.onload = () => {
-      const text = String(reader.result);
+      const text = normalizeCsvText(String(reader.result));
       setCsvText(text);
       const parsed = Papa.parse(text, { header: true, preview: 1 });
       const fields = parsed.meta.fields ?? [];
       setHeaders(fields);
       const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, '');
       const aliases: Record<MappingKey, string[]> = {
-        registration_id: ['id', 'registrationid', 'registrationno', 'registrationnumber', 'srno', 'serialno'],
+        registration_id: ['id', 'registrationid', 'registrationno', 'registrationnumber'],
         team_name: ['teamname', 'team'],
         member1_name: ['names', 'name', 'participantname', 'fullname', 'member1name'],
         member1_email: ['email', 'emailid', 'emailaddress', 'member1email'],
