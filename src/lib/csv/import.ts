@@ -42,8 +42,39 @@ export function applyMappingAndValidate(csvText: string, mapping: ColumnMapping)
   const result = Papa.parse<Record<string, string>>(csvText, { header: true, skipEmptyLines: true });
   const headers = result.meta.fields ?? [];
 
+  // Google Sheets exports merged team/ID cells as blanks on continuation rows.
+  // Fill down ID/team and fold a second consecutive member row into the same entry.
+  const normalizedRows = result.data.map((row) => ({ ...row }));
+  let lastRegistrationId = '';
+  let lastTeamName = '';
+  for (const raw of normalizedRows) {
+    const id = (raw[mapping.registration_id] ?? '').trim();
+    if (id) lastRegistrationId = id;
+    else if (lastRegistrationId) raw[mapping.registration_id] = lastRegistrationId;
+    if (mapping.team_name) {
+      const team = (raw[mapping.team_name] ?? '').trim();
+      if (team) lastTeamName = team;
+      else if (lastTeamName) raw[mapping.team_name] = lastTeamName;
+    }
+  }
+  const foldedRows: Record<string, string>[] = [];
+  for (const raw of normalizedRows) {
+    const id = (raw[mapping.registration_id] ?? '').trim();
+    const name = (raw[mapping.member1_name] ?? '').trim();
+    const previous = foldedRows[foldedRows.length - 1];
+    if (id && previous && (previous[mapping.registration_id] ?? '').trim() === id && name) {
+      const existingSecond = mapping.member2_name ? (previous[mapping.member2_name] ?? '').trim() : '';
+      if (!existingSecond && mapping.member2_name) {
+        previous[mapping.member2_name] = name;
+        if (mapping.member2_email) previous[mapping.member2_email] = mapping.member1_email ? (raw[mapping.member1_email] ?? '') : '';
+        continue;
+      }
+    }
+    foldedRows.push(raw);
+  }
+
   const seen = new Map<string, number>();
-  const rows: ParsedRow[] = result.data.map((raw, i) => {
+  const rows: ParsedRow[] = foldedRows.map((raw, i) => {
     const errors: string[] = [];
     const registration_id = (raw[mapping.registration_id] ?? '').trim();
     const member1_name = (raw[mapping.member1_name] ?? '').trim();
