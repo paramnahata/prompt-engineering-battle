@@ -12,7 +12,7 @@ export default function RegistrationDeskPage() {
       <div className="max-w-4xl mx-auto mb-4">
         <Link href="/organizer/hub" className="text-xs text-muted hover:text-foreground">← Organizer Hub</Link>
       </div>
-      <RegistrationDeskClient />
+      <RegistrationDeskClient canImport={session.role === 'admin'} />
     </main>
   );
 }
