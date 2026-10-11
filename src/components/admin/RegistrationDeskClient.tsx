@@ -456,50 +456,49 @@ function ParticipantsTable({ refreshKey, onReset }: { refreshKey: number; onRese
         <p className="text-muted text-sm">No matches for "{query}".</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[900px]">
             <thead>
               <tr className="text-left text-muted border-b border-border">
                 <th className="py-2 pr-3">Entry</th>
-                <th className="py-2 pr-3">Participant / Team</th>
+                <th className="py-2 pr-3">Team</th>
+                <th className="py-2 pr-3">Member 1</th>
+                <th className="py-2 pr-3">Member 1 Contact</th>
+                <th className="py-2 pr-3">Member 2</th>
+                <th className="py-2 pr-3">Member 2 Contact</th>
                 <th className="py-2 pr-3">Attendance</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((e) => (
-                <tr key={e.id} className="border-b border-border/50">
-                  <td className="py-2 pr-3 font-medium">{Number(e.entry_code.replace(/\\D/g, '')) || e.entry_code}</td>
-                  <td className="py-2 pr-3 text-muted">
-                    {e.is_team ? (
-                      <>
-                        <div className="text-foreground">{e.team_name || 'Unnamed team'}</div>
-                        {e.team_members
-                          ?.sort((a, b) => a.member_position - b.member_position)
-                          .map((m) => (
-                            <div key={m.member_position}>
-                              <div className="text-xs">{m.full_name}</div>
-                              <div className="text-xs text-muted">{[m.email, m.phone].filter(Boolean).join(' · ') || 'Email/phone not provided'}</div>
-                            </div>
-                          ))}
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-foreground">{e.team_members?.[0]?.full_name}</span>
-                        <div className="text-xs text-muted">{[e.team_members?.[0]?.email, e.team_members?.[0]?.phone].filter(Boolean).join(' · ') || 'Email/phone not provided'}</div>
-                      </>
-                    )}
-                  </td>
-                  <td className="py-2 pr-3">
-                    <button
-                      onClick={() => toggle(e)}
-                      className={`text-xs px-2 py-1 rounded-full ${
-                        e.present ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'
-                      }`}
-                    >
-                      {e.present ? 'PRESENT' : 'NOT CHECKED IN'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((e) => {
+                const members = [...(e.team_members ?? [])].sort((a, b) => a.member_position - b.member_position);
+                const first = members[0];
+                const second = members[1];
+                return (
+                  <tr key={e.id} className="border-b border-border/50 align-top">
+                    <td className="py-3 pr-3 font-medium whitespace-nowrap">{Number(e.entry_code.replace(/\\D/g, '')) || e.entry_code}</td>
+                    <td className="py-3 pr-3">{e.is_team ? (e.team_name || 'Unnamed team') : 'Individual'}</td>
+                    <td className="py-3 pr-3">{first?.full_name || '—'}</td>
+                    <td className="py-3 pr-3 text-xs text-muted">
+                      <div>{first?.email || 'Email not provided'}</div>
+                      <div>{first?.phone || 'Phone not provided'}</div>
+                    </td>
+                    <td className="py-3 pr-3">{second?.full_name || (e.is_team ? '—' : 'N/A')}</td>
+                    <td className="py-3 pr-3 text-xs text-muted">
+                      {second ? (
+                        <>
+                          <div>{second.email || 'Email not provided'}</div>
+                          <div>{second.phone || 'Phone not provided'}</div>
+                        </>
+                      ) : '—'}
+                    </td>
+                    <td className="py-3 pr-3 whitespace-nowrap">
+                      <span className={e.checked_in_at ? 'text-green-400' : 'text-amber-400'}>
+                        {e.checked_in_at ? 'PRESENT' : 'NOT CHECKED IN'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
