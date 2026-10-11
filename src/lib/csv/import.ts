@@ -76,22 +76,32 @@ export function applyMappingAndValidate(csvText: string, mapping: ColumnMapping)
     }
   }
   const foldedRows: Record<string, string>[] = [];
+  const isAuto = (key: string | undefined, field: string) => key === `__auto_${field}`;
   for (const raw of normalizedRows) {
     const id = (raw[mapping.registration_id] ?? '').trim();
     const name = (raw[mapping.member1_name] ?? '').trim();
     const previous = foldedRows[foldedRows.length - 1];
     if (id && previous && (previous[mapping.registration_id] ?? '').trim() === id && name) {
-      const existingSecond = mapping.member2_name ? (previous[mapping.member2_name] ?? '').trim() : '';
-      if (!existingSecond && mapping.member2_name) {
-        previous[mapping.member2_name] = name;
-        if (mapping.member2_email) previous[mapping.member2_email] = mapping.member1_email ? (raw[mapping.member1_email] ?? '') : '';
-        if (mapping.member2_phone) previous[mapping.member2_phone] = mapping.member1_phone ? (raw[mapping.member1_phone] ?? '') : '';
+      const existingSecond = mapping.member2_name && !isAuto(mapping.member2_name, 'member2_name')
+        ? (previous[mapping.member2_name] ?? '').trim() : '';
+      if (!existingSecond && (mapping.member2_name || mapping.member2_email || mapping.member2_phone)) {
+        if (mapping.member2_name && (isAuto(mapping.member2_name, 'member2_name') || !existingSecond)) {
+          previous[isAuto(mapping.member2_name, 'member2_name') ? mapping.member1_name : mapping.member2_name] =
+            isAuto(mapping.member2_name, 'member2_name') ? (raw[mapping.member1_name] ?? '') : name;
+        }
+        if (mapping.member2_email) {
+          previous[isAuto(mapping.member2_email, 'member2_email') ? mapping.member1_email ?? '' : mapping.member2_email] =
+            raw[isAuto(mapping.member2_email, 'member2_email') ? mapping.member1_email ?? '' : mapping.member2_email] ?? '';
+        }
+        if (mapping.member2_phone) {
+          previous[isAuto(mapping.member2_phone, 'member2_phone') ? mapping.member1_phone ?? '' : mapping.member2_phone] =
+            raw[isAuto(mapping.member2_phone, 'member2_phone') ? mapping.member1_phone ?? '' : mapping.member2_phone] ?? '';
+        }
         continue;
       }
     }
     foldedRows.push(raw);
   }
-
   const seen = new Map<string, number>();
   const rows: ParsedRow[] = foldedRows.map((raw, i) => {
     const errors: string[] = [];
@@ -100,9 +110,9 @@ export function applyMappingAndValidate(csvText: string, mapping: ColumnMapping)
     const team_name = mapping.team_name ? (raw[mapping.team_name] ?? '').trim() : undefined;
     const member1_email = mapping.member1_email ? (raw[mapping.member1_email] ?? '').trim() : undefined;
     const member1_phone = mapping.member1_phone ? (raw[mapping.member1_phone] ?? '').trim() : undefined;
-    const member2_name = mapping.member2_name ? (raw[mapping.member2_name] ?? '').trim() : undefined;
-    const member2_email = mapping.member2_email ? (raw[mapping.member2_email] ?? '').trim() : undefined;
-    const member2_phone = mapping.member2_phone ? (raw[mapping.member2_phone] ?? '').trim() : undefined;
+    const member2_name = mapping.member2_name ? (raw[mapping.member2_name === '__auto_member2_name' ? mapping.member1_name : mapping.member2_name] ?? '').trim() : undefined;
+    const member2_email = mapping.member2_email ? (raw[mapping.member2_email === '__auto_member2_email' ? mapping.member1_email ?? '' : mapping.member2_email] ?? '').trim() : undefined;
+    const member2_phone = mapping.member2_phone ? (raw[mapping.member2_phone === '__auto_member2_phone' ? mapping.member1_phone ?? '' : mapping.member2_phone] ?? '').trim() : undefined;
     const payment_status = mapping.payment_status ? (raw[mapping.payment_status] ?? '').trim() : undefined;
 
     if (!registration_id) errors.push('Missing registration_id');
