@@ -164,7 +164,11 @@ export default function Round1Page() {
         body: JSON.stringify({ submissionId: activeSubmission.id }),
       });
       const body = await res.json().catch(() => ({}));
-      if (body.timerNotExpired) {\n        setLoadError(null);\n        return;\n      }\n      if (body.roundEnded) {
+      if (body.timerNotExpired) {
+        setLoadError(null);
+        return;
+      }
+      if (body.roundEnded) {
         router.replace('/student/waiting');
         return;
       }
