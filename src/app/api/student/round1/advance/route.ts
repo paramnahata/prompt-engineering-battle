@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
 
   const { data: submission, error } = await db
     .from('submissions')
-    .select('id, entry_id, assignment_id, status')
+    .select('id, entry_id, assignment_id, status, question_end_at')
     .eq('id', submissionId)
     .single();
   if (error || !submission) return NextResponse.json({ error: 'not found' }, { status: 404 });
@@ -51,6 +51,10 @@ export async function POST(req: NextRequest) {
   const { data: round } = await db.from('rounds').select('status').eq('id', assignment.round_id).single();
   if (!round || round.status !== 'running') {
     return NextResponse.json({ error: 'Round 1 has ended. This submission is closed.', roundEnded: true }, { status: 409 });
+  }
+
+  if (submission.question_end_at && Date.now() < new Date(submission.question_end_at).getTime()) {
+    return NextResponse.json({ error: 'This challenge timer has not finished yet.', timerNotExpired: true, secondsLeft: Math.ceil((new Date(submission.question_end_at).getTime() - Date.now()) / 1000) }, { status: 409 });
   }
 
   if (assignment.position < 4) {
