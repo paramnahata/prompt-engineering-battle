@@ -31,9 +31,21 @@ export interface ImportPreview {
   duplicateRegistrationIds: string[];
 }
 
+/** Remove title/blank rows before the real header (common in Google Sheets exports). */
+export function normalizeCsvText(csvText: string): string {
+  const parsed = Papa.parse<string[]>(csvText, { header: false, skipEmptyLines: false });
+  const rows = parsed.data;
+  const norm = (value: unknown) => String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const headerIndex = rows.findIndex((row) => {
+    const cells = row.map(norm);
+    return cells.includes('names') && cells.includes('id') && (cells.includes('srno') || cells.includes('email') || cells.includes('emailid'));
+  });
+  return Papa.unparse(headerIndex >= 0 ? rows.slice(headerIndex) : rows.filter((row) => row.some((cell) => String(cell ?? '').trim())));
+}
+
 /** Step 1: just parse headers + raw rows, no mapping applied yet. */
 export function parseCsvHeaders(csvText: string): { headers: string[]; rowCount: number } {
-  const result = Papa.parse<Record<string, string>>(csvText, { header: true, skipEmptyLines: true });
+  const result = Papa.parse<Record<string, string>>(normalizeCsvText(csvText), { header: true, skipEmptyLines: true });
   return { headers: result.meta.fields ?? [], rowCount: result.data.length };
 }
 
