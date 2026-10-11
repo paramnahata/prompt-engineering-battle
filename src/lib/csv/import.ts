@@ -49,12 +49,14 @@ export function applyMappingAndValidate(csvText: string, mapping: ColumnMapping)
   let lastTeamName = '';
   for (const raw of normalizedRows) {
     const id = (raw[mapping.registration_id] ?? '').trim();
+    const continuationRow = !id && Boolean(lastRegistrationId);
     if (id) lastRegistrationId = id;
     else if (lastRegistrationId) raw[mapping.registration_id] = lastRegistrationId;
     if (mapping.team_name) {
       const team = (raw[mapping.team_name] ?? '').trim();
       if (team) lastTeamName = team;
-      else if (lastTeamName) raw[mapping.team_name] = lastTeamName;
+      else if (continuationRow && lastTeamName) raw[mapping.team_name] = lastTeamName;
+      else if (!continuationRow) lastTeamName = '';
     }
   }
   const foldedRows: Record<string, string>[] = [];
