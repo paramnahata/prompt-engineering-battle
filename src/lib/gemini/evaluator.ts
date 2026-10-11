@@ -1,3 +1,4 @@
+import { getGeminiApiKey } from '@/lib/gemini/key-store';
 /**
  * Server-only. GEMINI_API_KEY must never reach the browser — this file
  * must only be imported from route handlers / server-side workers.
@@ -47,8 +48,8 @@ export class GeminiRateLimitError extends Error {}
 export class GeminiTransientError extends Error {}
 
 export async function evaluateSubmission(input: EvalInput): Promise<EvalResult> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('Missing GEMINI_API_KEY environment variable.');
+  const apiKey = await getGeminiApiKey();
+  if (!apiKey) throw new Error('Missing Gemini API key. Configure it in Admin → AI Judging, or set GEMINI_API_KEY in the deployment environment.');
 
   const userPrompt = [
     `PROBLEM STATEMENT:\n${input.problem}`,

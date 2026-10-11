@@ -48,6 +48,10 @@ export async function POST(req: NextRequest) {
     .eq('id', submission.assignment_id)
     .single();
   if (!assignment) return NextResponse.json({ error: 'assignment not found' }, { status: 500 });
+  const { data: round } = await db.from('rounds').select('status').eq('id', assignment.round_id).single();
+  if (!round || round.status !== 'running') {
+    return NextResponse.json({ error: 'Round 1 has ended. This submission is closed.', roundEnded: true }, { status: 409 });
+  }
 
   if (assignment.position < 4) {
     await db.from('submissions').update({ status: 'locked' }).eq('id', submissionId);

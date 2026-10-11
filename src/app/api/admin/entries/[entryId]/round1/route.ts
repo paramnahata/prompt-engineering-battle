@@ -22,7 +22,7 @@ export async function GET(_req: NextRequest, { params }: { params: { entryId: st
 
   const { data: assignments, error: asgErr } = await db
     .from('challenge_assignments')
-    .select('id, position, is_common, challenge:challenges(title, problem_statement, prompt_word_limit, output_char_limit)')
+    .select('id, position, is_common, challenges:challenges(title, problem_statement, prompt_word_limit, output_char_limit)')
     .eq('entry_id', entryId)
     .order('position', { ascending: true });
   if (asgErr) return NextResponse.json({ error: asgErr.message }, { status: 500 });
