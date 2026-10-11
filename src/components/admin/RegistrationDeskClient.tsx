@@ -213,6 +213,7 @@ function CsvImportPanel({ onImported }: { onImported: () => void }) {
         const match = fields.find((field) => aliases[key].includes(norm(field)));
         if (match) auto[key] = match;
       });
+      if (!auto.member2_name && auto.member1_name) auto.member2_name = '__auto_member2_name';
       setMapping(auto);
     };
     reader.readAsText(file);
@@ -291,6 +292,7 @@ function CsvImportPanel({ onImported }: { onImported: () => void }) {
                 onChange={(e) => setMapping({ ...mapping, [field]: e.target.value || undefined })}
               >
                 <option value="">— none —</option>
+                {field === 'member2_name' && <option value="__auto_member2_name">Auto: next row with same ID</option>}
                 {headers.map((h) => (
                   <option key={h} value={h}>
                     {h}
