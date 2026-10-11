@@ -30,6 +30,9 @@ function LookupPanel() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [lastAction, setLastAction] = useState<string | null>(null);
+  const [allEntries, setAllEntries] = useState<EntryVM[]>([]);
+  useEffect(() => { fetch('/api/admin/participants', { cache: 'no-store' }).then((r) => r.ok ? r.json() : null).then((b) => { if (b?.entries) setAllEntries(b.entries); }).catch(() => {}); }, []);
+  const suggestions = entryCode.trim().length >= 2 ? allEntries.filter((e) => [e.entry_code, e.team_name ?? '', ...(e.team_members?.map((m) => m.full_name) ?? [])].join(' ').toLowerCase().includes(entryCode.trim().toLowerCase())).slice(0, 6) : [];
 
   const lookup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,13 +108,24 @@ function LookupPanel() {
           className="flex-1 bg-surface border border-border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-accent"
           placeholder="Entry number or participant name"
           value={entryCode}
-          onChange={(e) => setEntryCode(e.target.value)}
+          onChange={(e) => { setEntryCode(e.target.value); setEntry(null); setError(null); }}
           suppressHydrationWarning
+          autoComplete="off"
         />
         <button className="peb-btn-primary" disabled={loading}>
           {loading ? '…' : 'Find'}
         </button>
       </form>
+      {suggestions.length > 0 && !entry && (
+        <div className="mb-4 -mt-2 rounded-lg border border-border overflow-hidden" role="listbox" aria-label="Participant suggestions">
+          {suggestions.map((candidate) => (
+            <button key={candidate.id} type="button" className="block w-full text-left px-3 py-2 text-sm hover:bg-surface border-b border-border last:border-b-0" onClick={() => { setEntryCode(candidate.entry_code); setEntry(candidate); setError(null); }}>
+              <span className="font-medium">{candidate.entry_code}</span>
+              <span className="text-muted"> — {candidate.team_name || candidate.team_members?.map((m) => m.full_name).join(', ') || 'Participant'}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
@@ -183,7 +197,23 @@ function CsvImportPanel({ onImported }: { onImported: () => void }) {
       const text = String(reader.result);
       setCsvText(text);
       const parsed = Papa.parse(text, { header: true, preview: 1 });
-      setHeaders(parsed.meta.fields ?? []);
+      const fields = parsed.meta.fields ?? [];
+      setHeaders(fields);
+      const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const aliases: Record<MappingKey, string[]> = {
+        registration_id: ['id', 'registrationid', 'registrationno', 'registrationnumber', 'srno', 'serialno'],
+        team_name: ['teamname', 'team'],
+        member1_name: ['names', 'name', 'participantname', 'fullname', 'member1name'],
+        member1_email: ['email', 'emailid', 'emailaddress', 'member1email'],
+        member2_name: ['member2name', 'secondmembername'],
+        member2_email: ['member2email', 'secondmemberemail'],
+      };
+      const auto: Partial<Record<MappingKey, string>> = {};
+      (Object.keys(aliases) as MappingKey[]).forEach((key) => {
+        const match = fields.find((field) => aliases[key].includes(norm(field)));
+        if (match) auto[key] = match;
+      });
+      setMapping(auto);
     };
     reader.readAsText(file);
   };
@@ -237,7 +267,7 @@ function CsvImportPanel({ onImported }: { onImported: () => void }) {
     <div className="peb-card">
       <h2 className="font-medium mb-1">Import participants from CSV</h2>
       <p className="text-muted text-sm mb-4">
-        Any column names work — map your file's headers to the fields below.
+        Upload the ERP/Unstop sheet as CSV. Columns such as ID, NAMES, Team Name and E-MAIL are auto-mapped; review before importing.
       </p>
 
       <input
@@ -462,7 +492,7 @@ function ParticipantsTable({ refreshKey, onReset }: { refreshKey: number; onRese
   );
 }
 
-export default function RegistrationDeskClient() {
+export default function RegistrationDeskClient({ canImport = false }: { canImport?: boolean }) {
   const [refreshKey, setRefreshKey] = useState(0);
 
   return (
@@ -472,9 +502,9 @@ export default function RegistrationDeskClient() {
         <p className="text-muted text-sm">Import participants, check them in, and track attendance.</p>
       </div>
       <AccessCodePanel />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className={canImport ? "grid grid-cols-1 lg:grid-cols-2 gap-6" : "grid grid-cols-1 gap-6"}>
         <LookupPanel />
-        <CsvImportPanel onImported={() => setRefreshKey((k) => k + 1)} />
+        {canImport && <CsvImportPanel onImported={() => setRefreshKey((k) => k + 1)} />}
       </div>
       <ParticipantsTable refreshKey={refreshKey} onReset={() => setRefreshKey((k) => k + 1)} />
     </div>
