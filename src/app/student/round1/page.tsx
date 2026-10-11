@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useServerCountdown } from '@/hooks/useServerCountdown';
 import { formatMMSS } from '@/lib/timer';
+import LogoutButton from '@/components/auth/LogoutButton';
 
 interface AssignmentVM {
   id: string;
@@ -302,12 +303,12 @@ export default function Round1Page() {
           <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-300">Prompt Engineering Battle · Live Arena</div>
           <div className="mt-1 text-lg font-bold sm:text-xl">Challenge {activeAssignment.position} <span className="font-normal text-slate-500">/ 4</span></div>
         </div>
-        <div className="text-right">
+        <div className="flex items-center gap-4"><div className="text-right">
           <div className={`text-2xl font-mono ${secondsLeft !== null && secondsLeft < 30 ? 'text-red-400 animate-pulse-glow' : ''}`}>
             {secondsLeft !== null ? formatMMSS(secondsLeft) : '--:--'}
           </div>
           {offline && <div className="text-xs text-amber-400">Connection issue · retrying</div>}
-        </div>
+        </div><LogoutButton /></div>
       </header>
 
       <div className="mx-auto max-w-7xl px-5 pt-5 sm:px-8">
