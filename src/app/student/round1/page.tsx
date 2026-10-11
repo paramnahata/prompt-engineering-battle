@@ -164,7 +164,7 @@ export default function Round1Page() {
         body: JSON.stringify({ submissionId: activeSubmission.id }),
       });
       const body = await res.json().catch(() => ({}));
-      if (body.roundEnded) {
+      if (body.timerNotExpired) {\n        setLoadError(null);\n        return;\n      }\n      if (body.roundEnded) {
         router.replace('/student/waiting');
         return;
       }
@@ -270,7 +270,7 @@ export default function Round1Page() {
   }, []);
 
   const blockClipboard = (e: React.ClipboardEvent) => e.preventDefault();
-  const canAdvance = !overWordLimit && !overCharLimit && !advancing;
+  const canAdvance = !overWordLimit && !overCharLimit && !advancing && secondsLeft === 0;
   const isLastChallenge = activeAssignment?.position === 4;
 
   if (showIntro) {
@@ -393,7 +393,7 @@ export default function Round1Page() {
               {saveState === 'over_limit' && <span className="text-red-400">{limitError}</span>}
             </span>
             <button className="peb-btn-primary" onClick={advance} disabled={!canAdvance}>
-              {advancing ? 'Submitting…' : isLastChallenge ? 'Final Submit' : 'Save & Next'}
+              {advancing ? 'Submitting…' : secondsLeft !== null && secondsLeft > 0 ? `Wait ${formatMMSS(secondsLeft)}` : isLastChallenge ? 'Final Submit' : 'Save & Next'}
             </button>
           </div>
           <p className="text-xs text-muted text-right">Once you move on, you can't come back to this challenge.</p>
