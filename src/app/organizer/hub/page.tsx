@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
+import LogoutButton from '@/components/auth/LogoutButton';
 
 const ALL_TILES = [
   { role: 'admin', href: '/admin/dashboard', label: 'Admin Dashboard', desc: 'Event control center' },
@@ -33,7 +34,7 @@ export default function OrganizerHubPage() {
             <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Organizer Hub</h1>
             <p className="mt-2 text-sm text-muted">Everything you need to run Prompt Engineering Battle.</p>
           </div>
-          <span className="w-fit rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold capitalize text-slate-300">Signed in · {session.role}</span>
+          <div className="flex items-center gap-3"><span className="w-fit rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold capitalize text-slate-300">Signed in · {session.role}</span><LogoutButton /></div>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {tiles.map((t) => (
