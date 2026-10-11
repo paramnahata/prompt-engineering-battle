@@ -8,6 +8,8 @@ import { normalizeCsvText } from '@/lib/csv/import';
 interface TeamMember {
   member_position: number;
   full_name: string;
+  email?: string | null;
+  phone?: string | null;
 }
 interface EntryVM {
   id: string;
@@ -21,7 +23,7 @@ interface EntryVM {
 }
 
 const REQUIRED_FIELDS = ['registration_id', 'member1_name'] as const;
-const OPTIONAL_FIELDS = ['team_name', 'member1_email', 'member2_name', 'member2_email'] as const;
+const OPTIONAL_FIELDS = ['team_name', 'member1_email', 'member1_phone', 'member2_name', 'member2_email', 'member2_phone'] as const;
 // payment_status isn't collected — every entry is treated as already paid.
 type MappingKey = (typeof REQUIRED_FIELDS)[number] | (typeof OPTIONAL_FIELDS)[number];
 
@@ -134,7 +136,7 @@ function LookupPanel() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <div>
-              <div className="font-semibold text-lg">{entry.entry_code}</div>
+              <div className="font-semibold text-lg">{Number(entry.entry_code.replace(/\\D/g, '')) || entry.entry_code}</div>
               <div className="text-sm text-muted">
                 {entry.is_team ? entry.team_name || 'Unnamed team' : entry.team_members?.[0]?.full_name}
               </div>
@@ -153,7 +155,8 @@ function LookupPanel() {
                 ?.sort((a, b) => a.member_position - b.member_position)
                 .map((m) => (
                   <li key={m.member_position}>
-                    Member {m.member_position}: {m.full_name}
+                    <div>Member {m.member_position}: {m.full_name}</div>
+                    <div className="text-xs">{[m.email, m.phone].filter(Boolean).join(' · ') || 'Contact details not provided'}</div>
                   </li>
                 ))}
             </ul>
@@ -206,8 +209,10 @@ function CsvImportPanel({ onImported }: { onImported: () => void }) {
         team_name: ['teamname', 'team'],
         member1_name: ['names', 'name', 'participantname', 'fullname', 'member1name'],
         member1_email: ['email', 'emailid', 'emailaddress', 'member1email'],
+        member1_phone: ['phoneno', 'phone', 'mobileno', 'mobile', 'contactnumber', 'member1phone'],
         member2_name: ['member2name', 'secondmembername'],
         member2_email: ['member2email', 'secondmemberemail'],
+        member2_phone: ['member2phone', 'secondmemberphone'],
       };
       const auto: Partial<Record<MappingKey, string>> = {};
       (Object.keys(aliases) as MappingKey[]).forEach((key) => {
@@ -215,6 +220,8 @@ function CsvImportPanel({ onImported }: { onImported: () => void }) {
         if (match) auto[key] = match;
       });
       if (!auto.member2_name && auto.member1_name) auto.member2_name = '__auto_member2_name';
+      if (!auto.member2_email && auto.member1_email) auto.member2_email = '__auto_member2_email';
+      if (!auto.member2_phone && auto.member1_phone) auto.member2_phone = '__auto_member2_phone';
       setMapping(auto);
     };
     reader.readAsText(file);
@@ -293,7 +300,7 @@ function CsvImportPanel({ onImported }: { onImported: () => void }) {
                 onChange={(e) => setMapping({ ...mapping, [field]: e.target.value || undefined })}
               >
                 <option value="">— none —</option>
-                {field === 'member2_name' && <option value="__auto_member2_name">Auto: next row with same ID</option>}
+                {['member2_name', 'member2_email', 'member2_phone'].includes(field) && <option value={`__auto_${field}`}>Auto: next row with same ID</option>}
                 {headers.map((h) => (
                   <option key={h} value={h}>
                     {h}
@@ -409,7 +416,7 @@ function ParticipantsTable({ refreshKey, onReset }: { refreshKey: number; onRese
           e.team_name ?? '',
           e.payment_status,
           e.present ? 'present' : 'not checked in',
-          ...(e.team_members?.map((m) => m.full_name) ?? []),
+          ...(e.team_members?.flatMap((m) => [m.full_name, m.email ?? '', m.phone ?? '']) ?? []),
         ]
           .join(' ')
           .toLowerCase();
@@ -460,7 +467,7 @@ function ParticipantsTable({ refreshKey, onReset }: { refreshKey: number; onRese
             <tbody>
               {filtered.map((e) => (
                 <tr key={e.id} className="border-b border-border/50">
-                  <td className="py-2 pr-3 font-medium">{e.entry_code}</td>
+                  <td className="py-2 pr-3 font-medium">{Number(e.entry_code.replace(/\\D/g, '')) || e.entry_code}</td>
                   <td className="py-2 pr-3 text-muted">
                     {e.is_team ? (
                       <>
@@ -469,10 +476,12 @@ function ParticipantsTable({ refreshKey, onReset }: { refreshKey: number; onRese
                           ?.sort((a, b) => a.member_position - b.member_position)
                           .map((m) => (
                             <div key={m.member_position} className="text-xs">{m.full_name}</div>
+                            <div key={`${m.member_position}-contact`} className="text-xs text-muted">{[m.email, m.phone].filter(Boolean).join(' · ')}</div>
                           ))}
                       </>
                     ) : (
                       <span className="text-foreground">{e.team_members?.[0]?.full_name}</span>
+                      <div className="text-xs text-muted">{[e.team_members?.[0]?.email, e.team_members?.[0]?.phone].filter(Boolean).join(' · ')}</div>
                     )}
                   </td>
                   <td className="py-2 pr-3">
