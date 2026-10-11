@@ -38,13 +38,38 @@ function LookupPanel() {
     setLastAction(null);
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/attendance?entryCode=${encodeURIComponent(entryCode.trim())}`);
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.error ?? 'Lookup failed');
+      const term = entryCode.trim();
+      if (!term) {
+        setError('Enter an entry number, participant name, or team name.');
         return;
       }
-      setEntry(body.entry);
+      const res = await fetch(`/api/admin/attendance?entryCode=${encodeURIComponent(term)}`, { cache: 'no-store' });
+      const body = await res.json();
+      if (res.ok) {
+        setEntry(body.entry);
+        return;
+      }
+      if (res.status === 404) {
+        const listRes = await fetch('/api/admin/participants', { cache: 'no-store' });
+        const listBody = await listRes.json();
+        if (listRes.ok) {
+          const tokens = term.toLowerCase().split(/\\s+/).filter(Boolean);
+          const matches = (listBody.entries ?? []).filter((candidate: EntryVM) => {
+            const haystack = [candidate.entry_code, candidate.team_name ?? '', candidate.payment_status,
+              ...(candidate.team_members?.map((m) => m.full_name) ?? [])].join(' ').toLowerCase();
+            return tokens.every((token: string) => haystack.includes(token));
+          });
+          if (matches.length === 1) {
+            setEntry(matches[0]);
+            return;
+          }
+          if (matches.length > 1) {
+            setError(`Found ${matches.length} matching participants. Use the full entry number or a more specific name in the table search below.`);
+            return;
+          }
+        }
+      }
+      setError(body.error ?? 'No matching participant found.');
     } finally {
       setLoading(false);
     }
@@ -78,7 +103,7 @@ function LookupPanel() {
       <form onSubmit={lookup} className="flex gap-2 mb-4">
         <input
           className="flex-1 bg-surface border border-border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-accent"
-          placeholder="ENTRY-001"
+          placeholder="Entry number or participant name"
           value={entryCode}
           onChange={(e) => setEntryCode(e.target.value)}
           suppressHydrationWarning
@@ -355,7 +380,8 @@ function ParticipantsTable({ refreshKey, onReset }: { refreshKey: number; onRese
         ]
           .join(' ')
           .toLowerCase();
-        return haystack.includes(q);
+        const tokens = q.split(/\\s+/).filter(Boolean);
+        return tokens.every((token) => haystack.includes(token));
       })
     : entries;
 
