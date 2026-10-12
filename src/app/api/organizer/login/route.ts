@@ -32,8 +32,11 @@ export async function POST(req: NextRequest) {
     if (adminErr && adminErr.code !== 'PGRST116') throw adminErr;
 
     if (admin && verifyPassword(password, admin.password_hash)) {
-      role = admin.role === 'volunteer' ? 'volunteer' : 'admin';
-      userId = admin.id;
+      // Never promote an unknown/malformed database role to admin.
+      if (admin.role === 'admin' || admin.role === 'volunteer') {
+        role = admin.role;
+        userId = admin.id;
+      }
     } else {
       const { data: judge, error: judgeErr } = await db
         .from('judges')
