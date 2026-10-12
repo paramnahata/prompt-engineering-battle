@@ -22,6 +22,11 @@ interface EntryVM {
   team_members: TeamMember[];
 }
 
+function displayEntryNumber(code: string) {
+  const match = code.match(/(\d+)$/);
+  return match ? String(Number(match[1])) : code;
+}
+
 const REQUIRED_FIELDS = ['registration_id', 'member1_name'] as const;
 const OPTIONAL_FIELDS = ['team_name', 'member1_email', 'member1_phone', 'member2_name', 'member2_email', 'member2_phone'] as const;
 // payment_status isn't collected — every entry is treated as already paid.
@@ -123,7 +128,7 @@ function LookupPanel() {
         <div className="mb-4 -mt-2 rounded-lg border border-border overflow-hidden" role="listbox" aria-label="Participant suggestions">
           {suggestions.map((candidate) => (
             <button key={candidate.id} type="button" className="block w-full text-left px-3 py-2 text-sm hover:bg-surface border-b border-border last:border-b-0" onClick={() => { setEntryCode(candidate.entry_code); setEntry(candidate); setError(null); }}>
-              <span className="font-medium">{candidate.entry_code}</span>
+              <span className="font-medium">{displayEntryNumber(candidate.entry_code)}</span>
               <span className="text-muted"> — {candidate.team_name || candidate.team_members?.map((m) => m.full_name).join(', ') || 'Participant'}</span>
             </button>
           ))}
