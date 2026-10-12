@@ -13,7 +13,7 @@ interface EntryVM {
   team_members: { member_position: number; full_name: string }[];
 }
 
-export default function EntriesListClient() {
+function displayEntryNumber(code: string) {\n  const match = code.match(/(\\d+)$/);\n  return match ? String(Number(match[1])) : code;\n}\n\nexport default function EntriesListClient() {
   const [entries, setEntries] = useState<EntryVM[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -28,7 +28,7 @@ export default function EntriesListClient() {
   const q = query.trim().toLowerCase();
   const filtered = q
     ? entries.filter((e) =>
-        [e.entry_code, e.team_name ?? '', ...(e.team_members?.map((m) => m.full_name) ?? [])]
+        [e.entry_code, displayEntryNumber(e.entry_code), e.team_name ?? '', ...(e.team_members?.map((m) => m.full_name) ?? [])]
           .join(' ')
           .toLowerCase()
           .includes(q)
@@ -63,7 +63,7 @@ export default function EntriesListClient() {
             <tbody>
               {filtered.map((e) => (
                 <tr key={e.id} className="border-b border-border/50">
-                  <td className="py-2 pr-3 font-medium">{e.entry_code}</td>
+                  <td className="py-2 pr-3 font-medium">{displayEntryNumber(e.entry_code)}</td>
                   <td className="py-2 pr-3 text-muted">
                     {e.is_team ? (
                       <>
