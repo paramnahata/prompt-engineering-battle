@@ -13,7 +13,12 @@ interface EntryVM {
   team_members: { member_position: number; full_name: string }[];
 }
 
-function displayEntryNumber(code: string) {\n  const match = code.match(/(\\d+)$/);\n  return match ? String(Number(match[1])) : code;\n}\n\nexport default function EntriesListClient() {
+function displayEntryNumber(code: string) {
+  const match = code.match(/(\d+)$/);
+  return match ? String(Number(match[1])) : code;
+}
+
+export default function EntriesListClient() {
   const [entries, setEntries] = useState<EntryVM[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
