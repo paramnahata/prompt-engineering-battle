@@ -23,6 +23,7 @@ export default function AdminDashboardClient() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [loginRows, setLoginRows] = useState<{ id: string; loggedInAt: string; entry: { entry_code: string; team_name: string | null; team_members: { member_position: number; full_name: string }[] } | null }[]>([]);
   const [loginLoading, setLoginLoading] = useState(true);
+  const [loginPanelOpen, setLoginPanelOpen] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
   const loadLogins = useCallback(async () => {
@@ -199,36 +200,50 @@ export default function AdminDashboardClient() {
         {error && <div role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</div>}
       </section>
 
-      <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-        <div className="mb-4 flex items-center justify-between gap-3">
+      <section className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-4 p-5 text-left transition hover:bg-white/[0.03]"
+          aria-expanded={loginPanelOpen}
+          onClick={() => setLoginPanelOpen((open) => !open)}
+        >
           <div>
             <h2 className="font-semibold">Student Login Activity</h2>
-            <p className="mt-1 text-sm text-muted">Latest student login events. Refreshes every 10 seconds.</p>
+            <p className="mt-1 text-sm text-muted">Open to view the latest recorded student logins.</p>
           </div>
-          <button className="peb-btn-secondary text-xs" onClick={() => void loadLogins()}>Refresh</button>
-        </div>
-        {loginError && <p className="mb-3 text-sm text-rose-300">{loginError}</p>}
-        {loginRows.length === 0 ? (
-          <p className="text-sm text-muted">{loginLoading ? 'Loading login activity…' : 'No student login events recorded yet.'}</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[520px] text-left text-sm">
-              <thead><tr className="border-b border-white/10 text-xs text-muted"><th className="py-2 pr-4">Entry</th><th className="py-2 pr-4">Participant / Team</th><th className="py-2">Login time</th></tr></thead>
-              <tbody>
-                {loginRows.map((row) => {
-                  const code = row.entry?.entry_code ?? 'Unknown entry';
-                  const number = code.match(/(\d+)$/)?.[1];
-                  const names = row.entry?.team_members?.slice().sort((a, b) => a.member_position - b.member_position).map((m) => m.full_name).filter(Boolean).join(', ');
-                  return <tr key={row.id} className="border-b border-white/5">
-                    <td className="py-2 pr-4 font-medium">{number ? String(Number(number)) : code}</td>
-                    <td className="py-2 pr-4">{row.entry?.team_name || names || 'Participant'}</td>
-                    <td className="py-2 text-muted">{new Date(row.loggedInAt).toLocaleString()}</td>
-                  </tr>;
-                })}
-              </tbody>
-            </table>
+          <span className="flex shrink-0 items-center gap-3 text-sm text-cyan-300">
+            {loginRows.length} events
+            <span aria-hidden="true" className="text-lg">{loginPanelOpen ? '−' : '+'}</span>
+          </span>
+        </button>
+        {loginPanelOpen && <div className="border-t border-white/10 p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <p className="text-xs text-muted">Refreshes every 10 seconds. This is login history, not a verified online-presence indicator.</p>
+            <button className="peb-btn-secondary shrink-0 text-xs" onClick={() => void loadLogins()}>Refresh</button>
           </div>
-        )}
+          {loginError && <p className="mb-3 text-sm text-rose-300">{loginError}</p>}
+          {loginRows.length === 0 ? (
+            <p className="text-sm text-muted">{loginLoading ? 'Loading login activity…' : 'No student login events recorded yet.'}</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[520px] text-left text-sm">
+                <thead><tr className="border-b border-white/10 text-xs text-muted"><th className="py-2 pr-4">Entry</th><th className="py-2 pr-4">Participant / Team</th><th className="py-2">Login time</th></tr></thead>
+                <tbody>
+                  {loginRows.map((row) => {
+                    const code = row.entry?.entry_code ?? 'Unknown entry';
+                    const number = code.match(/(\\d+)$/)?.[1];
+                    const names = row.entry?.team_members?.slice().sort((a, b) => a.member_position - b.member_position).map((m) => m.full_name).filter(Boolean).join(', ');
+                    return <tr key={row.id} className="border-b border-white/5">
+                      <td className="py-2 pr-4 font-medium">{number ? String(Number(number)) : code}</td>
+                      <td className="py-2 pr-4">{row.entry?.team_name || names || 'Participant'}</td>
+                      <td className="py-2 text-muted">{new Date(row.loggedInAt).toLocaleString()}</td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>}
       </section>
 
       <Link href="/admin/entries" className="group flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition hover:border-cyan-300/40 hover:bg-white/[0.06]">
