@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, KeyRound, Swords } from 'lucide-react';
@@ -11,6 +11,20 @@ export default function StudentLoginPage() {
   const [accessCode, setAccessCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/auth/session', { cache: 'no-store' })
+      .then(async (res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!active) return;
+        if (data?.role === 'student') router.replace('/student/waiting');
+        else setCheckingSession(false);
+      })
+      .catch(() => { if (active) setCheckingSession(false); });
+    return () => { active = false; };
+  }, [router]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
