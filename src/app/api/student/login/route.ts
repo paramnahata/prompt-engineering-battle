@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
   const { accessCode } = parsed.data;
   const rawEntryCode = parsed.data.entryCode.trim().toUpperCase();
   // The registration desk may give students a simple number; accept 1 as ENTRY-001.
-  const entryCode = /^\d{1,3}$/.test(rawEntryCode) ? \`ENTRY-\${rawEntryCode.padStart(3, '0')}\` : rawEntryCode;
+  const entryCode = /^\d{1,3}$/.test(rawEntryCode) ? 'ENTRY-' + rawEntryCode.padStart(3, '0') : rawEntryCode;
 
   if (!isAccessCodeValid(accessCode)) {
     return NextResponse.json({ error: 'Access code is incorrect or has expired' }, { status: 401 });
