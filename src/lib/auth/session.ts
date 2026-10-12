@@ -49,13 +49,23 @@ export function getSession(): SessionPayload | null {
 
   const [body, sig] = token.split('.');
   if (!body || !sig) return null;
-  if (sign(body) !== sig) return null; // tampered
+  try {
+    const expected = Buffer.from(sign(body), 'hex');
+    const received = Buffer.from(sig, 'hex');
+    if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) return null;
+  } catch {
+    return null;
+  } // tampered
 
   try {
     const payload: SessionPayload = JSON.parse(
       Buffer.from(body, 'base64url').toString('utf-8')
     );
-    if (Date.now() - payload.issuedAt > MAX_AGE_SECONDS * 1000) return null;
+    const validRoles: Role[] = ['admin', 'volunteer', 'judge', 'student'];
+    if (!payload || !validRoles.includes(payload.role) || typeof payload.userId !== 'string' || !payload.userId) return null;
+    if (typeof payload.issuedAt !== 'number' || !Number.isFinite(payload.issuedAt)) return null;
+    const age = Date.now() - payload.issuedAt;
+    if (age < -5 * 60 * 1000 || age > MAX_AGE_SECONDS * 1000) return null;
     return payload;
   } catch {
     return null;
