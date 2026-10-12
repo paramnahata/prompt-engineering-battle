@@ -23,10 +23,10 @@ export default function StudentLoginPage() {
         else setCheckingSession(false);
       })
       .catch(() => { if (active) setCheckingSession(false); });
-    if (checkingSession) return <main className="flex min-h-screen items-center justify-center text-sm text-slate-400">Checking your session…</main>;
-
-  return () => { active = false; };
+    return () => { active = false; };
   }, [router]);
+
+  if (checkingSession) return <main className="flex min-h-screen items-center justify-center text-sm text-slate-400">Checking your session…</main>;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
