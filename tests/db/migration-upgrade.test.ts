@@ -34,3 +34,17 @@ test('0004 upgrades a production-shaped database with existing ENTRY-### rows', 
   }
   assert.ok(fs.existsSync(path.join(MIG, '0004_event_readiness.sql')));
 });
+
+test('after 0004, an insert from the previous app version (no entry_number) still works', async () => {
+  const db = pool(DB);
+  try {
+    await db.query(`insert into entries (entry_code, registration_id) values ('ENTRY-012', 'OLD-APP')`);
+    const r = await db.query(`select entry_number from entries where registration_id = 'OLD-APP'`);
+    assert.equal(r.rows[0].entry_number, 12);
+    await db.query(`insert into entries (entry_code, registration_id) values ('ENTRY-0002', 'OLD-APP-2')`);
+    const r2 = await db.query(`select entry_number from entries where registration_id = 'OLD-APP-2'`);
+    assert.equal(r2.rows[0].entry_number, 13, 'collision → next free number');
+  } finally {
+    await db.end();
+  }
+});

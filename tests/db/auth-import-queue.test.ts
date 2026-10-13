@@ -57,7 +57,7 @@ test('per-entry brute-force limit (8 failures / 5 min) and per-IP limit', async 
   assert.equal((await login(4, true, '10.1.1.1')).ok, true, 'other entries unaffected');
 
   let limited = false;
-  for (let i = 0; i < 125; i++) {
+  for (let i = 0; i < 620; i++) {
     const r = await login(100 + (i % 50), false, '10.9.9.9');
     if (r.code === 'rate_limited') { limited = true; break; }
   }

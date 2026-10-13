@@ -56,8 +56,8 @@ test('empty prompts score zero without calling the model', async () => {
 
 test('queue backoff is bounded and errors never leak API keys', () => {
   assert.equal(backoffSeconds('transient', 0), 5);
-  assert.equal(backoffSeconds('rate_limit', 1), 60);
-  assert.equal(backoffSeconds('rate_limit', 10), 600);
+  assert.equal(backoffSeconds('rate_limit', 1), 30);
+  assert.equal(backoffSeconds('rate_limit', 10), 120);
   const msg = describeError(new Error('failed for key AIzaSyA1234567890abcdefghijklmnopqrstu while calling'));
   assert.ok(!msg.includes('AIzaSy'));
   assert.ok(describeError('x'.repeat(1000)).length <= 300);

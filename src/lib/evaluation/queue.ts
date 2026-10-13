@@ -21,8 +21,8 @@ export const MAX_RETRIES = 4;
 const DEFAULT_CONCURRENCY = Math.max(1, Math.min(8, Number(process.env.GEMINI_CONCURRENCY ?? 4) || 4));
 
 export function backoffSeconds(kind: 'rate_limit' | 'transient', retryCount: number): number {
-  const base = kind === 'rate_limit' ? 30 : 5;
-  return Math.min(600, base * 2 ** retryCount);
+  const base = kind === 'rate_limit' ? 15 : 5;
+  return Math.min(120, base * 2 ** retryCount);
 }
 
 /** Safe, credential-free error text for storage and the admin UI. */

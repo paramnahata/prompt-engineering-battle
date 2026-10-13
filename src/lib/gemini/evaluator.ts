@@ -20,6 +20,8 @@ import { getGeminiApiKey } from '@/lib/gemini/key-store';
 
 export const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash';
 export const RUBRIC_VERSION = 'r1-rubric-v2';
+/** Overridable only for local/staging tests with a mock Gemini server. */
+const API_BASE = (process.env.GEMINI_API_BASE_URL?.trim() || 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
 const REQUEST_TIMEOUT_MS = 25_000;
 
 export interface EvalInput {
@@ -156,7 +158,7 @@ export async function evaluateSubmission(input: EvalInput, fetchImpl: typeof fet
 
   let res: Response;
   try {
-    res = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`, {
+    res = await fetchImpl(`${API_BASE}/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify({

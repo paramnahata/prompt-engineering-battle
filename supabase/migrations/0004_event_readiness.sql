@@ -44,6 +44,24 @@ do $$ begin
   alter table entries add constraint entries_entry_number_positive check (entry_number > 0);
 exception when duplicate_object then null; end $$;
 
+-- Rows inserted without entry_number (e.g. by the previous app version while
+-- this migration is live but the new code is not yet deployed) get one
+-- derived from entry_code, or the next free number.
+create or replace function entries_fill_entry_number() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if new.entry_number is null then
+    new.entry_number := nullif(regexp_replace(coalesce(new.entry_code, ''), '\D', '', 'g'), '')::integer;
+    if new.entry_number is null or exists (select 1 from entries where entry_number = new.entry_number) then
+      select coalesce(max(entry_number), 0) + 1 into new.entry_number from entries;
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists trg_entries_fill_entry_number on entries;
+create trigger trg_entries_fill_entry_number before insert on entries
+  for each row execute function entries_fill_entry_number();
+
 -- ---------------------------------------------------------------------
 -- Team members: per-member details, up to 4 members per entry
 -- ---------------------------------------------------------------------
@@ -206,7 +224,8 @@ create or replace function student_login(
 returns jsonb language plpgsql set search_path = public as $$
 declare e entries; v_sid uuid; v_active integer;
 begin
-  if not rate_limit_hit('student-login-ip:' || coalesce(p_ip, 'unknown'), 120, 60) then
+  -- Generous per-IP cap: a whole college can sit behind one NAT address.
+  if not rate_limit_hit('student-login-ip:' || coalesce(p_ip, 'unknown'), 600, 60) then
     return jsonb_build_object('ok', false, 'status', 429, 'code', 'rate_limited');
   end if;
   if not rate_limit_hit('student-login-entry:' || p_entry_number, 8, 300, false) then
@@ -836,7 +855,7 @@ begin
                          '_round1_submit_entry', '_round1_finalize', 'round1_tick', '_round1_assign_missing', '_round1_assign_error',
                          'round1_control', 'student_round1_state', '_word_count', 'student_autosave',
                          'student_advance', 'claim_evaluation_jobs', 'compute_round1_results',
-                         'admin_live_participants', 'import_participants')
+                         'admin_live_participants', 'import_participants', 'entries_fill_entry_number')
   loop
     execute format('revoke all on function %s from public', f.sig);
     if exists (select 1 from pg_roles where rolname = 'anon') then
