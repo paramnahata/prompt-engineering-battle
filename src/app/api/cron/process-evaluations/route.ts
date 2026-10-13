@@ -1,19 +1,28 @@
-import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'node:crypto';
+import { NextRequest } from 'next/server';
 import { processEvaluationQueue } from '@/lib/evaluation/queue';
+import { jsonError, jsonOk, serverError } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 /**
- * Configure in vercel.json to run every 10-15s during the evaluation
- * window (or trigger manually from the admin "RUN EVALUATION" button via
- * this same route). Protect with CRON secret header in production.
+ * Optional scheduled worker (Vercel Cron sends `Authorization: Bearer
+ * $CRON_SECRET`). Fails closed: if CRON_SECRET is not configured the route
+ * is disabled — it used to be callable by anyone, burning Gemini quota.
+ * The admin dashboard's "Run evaluation" does the same work on demand.
  */
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('authorization');
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const secret = process.env.CRON_SECRET;
+  if (!secret || secret.length < 16) return jsonError('Not found.', 404);
+  const expected = Buffer.from(`Bearer ${secret}`);
+  const received = Buffer.from(req.headers.get('authorization') ?? '');
+  if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) {
+    return jsonError('Unauthorized.', 401);
   }
-
-  const result = await processEvaluationQueue(20);
-  return NextResponse.json(result);
+  try {
+    return jsonOk(await processEvaluationQueue({ timeBudgetMs: 45_000 }));
+  } catch (err) {
+    return serverError('cron evaluations', err);
+  }
 }

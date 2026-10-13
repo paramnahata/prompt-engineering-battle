@@ -1,33 +1,10 @@
-'use client';
+import { requirePageRole } from '@/lib/auth/session';
+import SubmittedScreen from '@/components/student/SubmittedScreen';
 
-import { Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+export const dynamic = 'force-dynamic';
 
-function SubmittedContent() {
-  const params = useSearchParams();
-  const ref = params.get('ref');
-
-  return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 text-center">
-      <div className="text-5xl">✅</div>
-      <h1 className="text-2xl font-semibold">Submission received successfully</h1>
-      {ref && (
-        <p className="text-muted">
-          Submission ID: <span className="font-mono text-foreground">{ref}</span>
-        </p>
-      )}
-      <p className="text-muted text-sm max-w-sm">
-        Your answers for Round 1 are locked in. Results will be announced by the organizers — please wait here or
-        check the display screen.
-      </p>
-    </main>
-  );
-}
-
-export default function SubmittedPage() {
-  return (
-    <Suspense fallback={null}>
-      <SubmittedContent />
-    </Suspense>
-  );
+export default async function SubmittedPage({ searchParams }: { searchParams: { ref?: string } }) {
+  const session = await requirePageRole(['student'], '/student/submitted');
+  const ref = typeof searchParams.ref === 'string' && /^[A-Z0-9-]{1,40}$/.test(searchParams.ref) ? searchParams.ref : null;
+  return <SubmittedScreen submissionRef={ref} entryNumber={session.entryNumber} />;
 }

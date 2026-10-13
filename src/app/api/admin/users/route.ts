@@ -1,130 +1,123 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireRole } from '@/lib/auth/session';
+import { endSessionsForSubject, requireApiRole } from '@/lib/auth/session';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { hashPassword } from '@/lib/auth/password';
+import { jsonError, jsonOk, readJson, serverError } from '@/lib/http';
 
-/** Only real admins manage accounts — not volunteers, not judges. */
+export const dynamic = 'force-dynamic';
+
+/** Only admins manage accounts — not volunteers, not judges. */
 
 export async function GET() {
-  const session = requireRole('admin');
-  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-
-  const db = supabaseAdmin();
-  const [{ data: admins }, { data: judges }] = await Promise.all([
-    db.from('admins').select('id, email, full_name, role, created_at'),
-    db.from('judges').select('id, email, full_name, active, created_at'),
-  ]);
-
-  const users = [
-    ...(admins ?? []).map((a) => ({
-      id: a.id,
-      kind: a.role as 'admin' | 'volunteer',
-      email: a.email,
-      full_name: a.full_name,
-      created_at: a.created_at,
-    })),
-    ...(judges ?? []).map((j) => ({
-      id: j.id,
-      kind: 'judge' as const,
-      email: j.email,
-      full_name: j.full_name,
-      active: j.active,
-      created_at: j.created_at,
-    })),
-  ];
-
-  return NextResponse.json({ users });
+  const auth = await requireApiRole(['admin']);
+  if (!auth.ok) return auth.response;
+  try {
+    const db = supabaseAdmin();
+    const [admins, judges] = await Promise.all([
+      db.from('admins').select('id, email, full_name, role, created_at').order('created_at'),
+      db.from('judges').select('id, email, full_name, active, created_at').order('created_at'),
+    ]);
+    if (admins.error || judges.error) throw admins.error ?? judges.error;
+    const users = [
+      ...(admins.data ?? []).filter((a) => a.role === 'admin' || a.role === 'volunteer').map((a) => ({
+        id: a.id, kind: a.role as 'admin' | 'volunteer', email: a.email, full_name: a.full_name, created_at: a.created_at,
+      })),
+      ...(judges.data ?? []).map((j) => ({
+        id: j.id, kind: 'judge' as const, email: j.email, full_name: j.full_name, active: j.active, created_at: j.created_at,
+      })),
+    ];
+    return jsonOk({ users, me: auth.session.userId });
+  } catch (err) {
+    return serverError('users list', err, 'Could not load accounts.');
+  }
 }
 
+const kind = z.enum(['admin', 'volunteer', 'judge']);
+const password = z.string().min(8, 'Use at least 8 characters').max(128);
+
 const createSchema = z.object({
-  kind: z.enum(['admin', 'volunteer', 'judge']),
-  email: z.string().email(),
-  full_name: z.string().min(1),
-  password: z.string().min(6),
+  kind,
+  email: z.string().trim().email().max(254),
+  full_name: z.string().trim().min(1).max(120),
+  password,
 });
 
 export async function POST(req: NextRequest) {
-  const session = requireRole('admin');
-  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-
-  const parsed = createSchema.safeParse(await req.json());
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  const { kind, email, full_name, password } = parsed.data;
-
-  const db = supabaseAdmin();
-  const password_hash = hashPassword(password);
-
-  if (kind === 'judge') {
-    const { error } = await db.from('judges').insert({ email: email.toLowerCase(), full_name, password_hash, active: true });
-    if (error) return NextResponse.json({ error: error.message }, { status: 409 });
-  } else {
-    const { error } = await db.from('admins').insert({ email: email.toLowerCase(), full_name, password_hash, role: kind });
-    if (error) return NextResponse.json({ error: error.message }, { status: 409 });
+  const auth = await requireApiRole(['admin']);
+  if (!auth.ok) return auth.response;
+  const body = await readJson(req, createSchema, 4096);
+  if (!body.ok) return body.response;
+  const { kind: k, full_name } = body.data;
+  const email = body.data.email.toLowerCase();
+  try {
+    const db = supabaseAdmin();
+    const [a, j] = await Promise.all([
+      db.from('admins').select('id').eq('email', email).maybeSingle(),
+      db.from('judges').select('id').eq('email', email).maybeSingle(),
+    ]);
+    if (a.data || j.data) return jsonError('An account with this email already exists.', 409);
+    const password_hash = hashPassword(body.data.password);
+    const { error } = k === 'judge'
+      ? await db.from('judges').insert({ email, full_name, password_hash, active: true })
+      : await db.from('admins').insert({ email, full_name, password_hash, role: k });
+    if (error) throw error;
+    await db.from('admin_actions').insert({ admin_id: auth.session.userId, action: 'create_account', new_value: { kind: k, email } });
+    return jsonOk({ ok: true });
+  } catch (err) {
+    return serverError('create account', err, 'Could not create the account.');
   }
-
-  await db.from('admin_actions').insert({
-    admin_id: session.userId,
-    action: 'create_account',
-    new_value: { kind, email },
-  });
-
-  return NextResponse.json({ ok: true });
 }
 
-const patchSchema = z.object({
-  kind: z.enum(['admin', 'volunteer', 'judge']),
-  id: z.string().uuid(),
-  newPassword: z.string().min(6),
-});
+const patchSchema = z.object({ kind, id: z.string().uuid(), newPassword: password });
 
+/** Password reset. Signs the account out everywhere. */
 export async function PATCH(req: NextRequest) {
-  const session = requireRole('admin');
-  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-
-  const parsed = patchSchema.safeParse(await req.json());
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  const { kind, id, newPassword } = parsed.data;
-
-  const db = supabaseAdmin();
-  const password_hash = hashPassword(newPassword);
-  const table = kind === 'judge' ? 'judges' : 'admins';
-  const { error } = await db.from(table).update({ password_hash }).eq('id', id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-
-  await db.from('admin_actions').insert({
-    admin_id: session.userId,
-    action: 'reset_password',
-    new_value: { kind, id },
-  });
-
-  return NextResponse.json({ ok: true });
+  const auth = await requireApiRole(['admin']);
+  if (!auth.ok) return auth.response;
+  const body = await readJson(req, patchSchema, 4096);
+  if (!body.ok) return body.response;
+  const { kind: k, id, newPassword } = body.data;
+  try {
+    const db = supabaseAdmin();
+    const table = k === 'judge' ? 'judges' : 'admins';
+    const { data, error } = await db.from(table).update({ password_hash: hashPassword(newPassword) }).eq('id', id).select('id').maybeSingle();
+    if (error) throw error;
+    if (!data) return jsonError('Account not found.', 404);
+    if (id !== auth.session.userId) await endSessionsForSubject(id, 'password_reset');
+    await db.from('admin_actions').insert({ admin_id: auth.session.userId, action: 'reset_password', new_value: { kind: k, id } });
+    return jsonOk({ ok: true });
+  } catch (err) {
+    return serverError('reset password', err, 'Could not reset the password.');
+  }
 }
 
-const deleteSchema = z.object({ kind: z.enum(['admin', 'volunteer', 'judge']), id: z.string().uuid() });
+const deleteSchema = z.object({ kind, id: z.string().uuid() });
 
 export async function DELETE(req: NextRequest) {
-  const session = requireRole('admin');
-  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-
-  const parsed = deleteSchema.safeParse(await req.json());
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  const { kind, id } = parsed.data;
-
-  if (kind !== 'judge' && id === session.userId) {
-    return NextResponse.json({ error: "You can't delete your own account while signed in as it." }, { status: 400 });
+  const auth = await requireApiRole(['admin']);
+  if (!auth.ok) return auth.response;
+  const body = await readJson(req, deleteSchema, 1024);
+  if (!body.ok) return body.response;
+  const { kind: k, id } = body.data;
+  if (id === auth.session.userId) return jsonError("You can't delete the account you are signed in with.", 400);
+  try {
+    const db = supabaseAdmin();
+    if (k === 'admin') {
+      const { count } = await db.from('admins').select('id', { count: 'exact', head: true }).eq('role', 'admin');
+      if ((count ?? 0) <= 1) return jsonError('At least one admin account must remain.', 409);
+    }
+    const table = k === 'judge' ? 'judges' : 'admins';
+    const { data, error } = await db.from(table).delete().eq('id', id).select('id').maybeSingle();
+    if (error) {
+      if (error.code === '23503') return jsonError('This account is referenced by audit records and cannot be deleted. Reset its password instead.', 409);
+      throw error;
+    }
+    if (!data) return jsonError('Account not found.', 404);
+    await endSessionsForSubject(id, 'account_deleted');
+    await db.from('admin_actions').insert({ admin_id: auth.session.userId, action: 'delete_account', old_value: { kind: k, id } });
+    return jsonOk({ ok: true });
+  } catch (err) {
+    return serverError('delete account', err, 'Could not delete the account.');
   }
-
-  const db = supabaseAdmin();
-  const table = kind === 'judge' ? 'judges' : 'admins';
-  const { error } = await db.from(table).delete().eq('id', id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-
-  await db.from('admin_actions').insert({
-    admin_id: session.userId,
-    action: 'delete_account',
-    old_value: { kind, id },
-  });
-
-  return NextResponse.json({ ok: true });
 }

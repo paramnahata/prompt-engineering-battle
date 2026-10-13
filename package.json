@@ -9,7 +9,10 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "seed": "tsx scripts/seed.ts",
-    "eval:worker": "tsx scripts/eval-worker.ts"
+    "eval:worker": "tsx scripts/eval-worker.ts",
+    "test": "node --conditions=react-server --import tsx --test tests/unit/*.test.ts",
+    "test:db": "node --conditions=react-server --import tsx --test --test-concurrency=1 tests/db/*.test.ts",
+    "test:api": "node --conditions=react-server --import tsx --test --test-concurrency=1 tests/api/*.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -30,6 +33,7 @@
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.53.0",
     "recharts": "^2.12.7",
+    "server-only": "^0.0.1",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
     "zod": "^3.23.8",
@@ -38,12 +42,14 @@
   "devDependencies": {
     "@types/node": "^22.5.5",
     "@types/papaparse": "^5.3.14",
+    "@types/pg": "^8.23.1",
     "@types/qrcode": "^1.5.5",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.0",
     "eslint-config-next": "14.2.35",
+    "pg": "^8.23.1",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.11",
     "tsx": "^4.19.1",

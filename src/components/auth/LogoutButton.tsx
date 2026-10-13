@@ -1,10 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 
-export default function LogoutButton({ className = '' }: { className?: string }) {
-  const router = useRouter();
+export default function LogoutButton({ className = '', redirectTo = '/' }: { className?: string; redirectTo?: string }) {
   const [loading, setLoading] = useState(false);
 
   const logout = async () => {
@@ -12,16 +10,21 @@ export default function LogoutButton({ className = '' }: { className?: string })
     setLoading(true);
     try {
       await fetch('/api/auth/logout', { method: 'POST', cache: 'no-store' });
+    } catch {
+      // The cookie is cleared server-side; even if the request failed we leave the page.
     } finally {
-      router.replace('/');
-      router.refresh();
-      setLoading(false);
+      // Full navigation so no protected page stays in the client router cache.
+      window.location.replace(redirectTo);
     }
   };
 
   return (
-    <button type="button" onClick={logout} disabled={loading}
-      className={className || 'rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-white/5 disabled:opacity-50'}>
+    <button
+      type="button"
+      onClick={logout}
+      disabled={loading}
+      className={className || 'rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:bg-white/5 disabled:opacity-50'}
+    >
       {loading ? 'Signing out…' : 'Log out'}
     </button>
   );

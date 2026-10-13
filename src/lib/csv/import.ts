@@ -1,163 +1,348 @@
 import Papa from 'papaparse';
+import crypto from 'node:crypto';
 
-export interface ColumnMapping {
-  registration_id: string;
-  team_name?: string;
-  member1_name: string;
-  member1_email?: string;
-  member1_phone?: string;
-  member2_name?: string;
-  member2_email?: string;
-  member2_phone?: string;
-  payment_status?: string;
+/**
+ * Participant CSV import.
+ *
+ * Handles sheets shaped like
+ *   SR.NO | ID | NAMES | Team Name | PHONE NO: | E-MAIL | GENDER | COLLEGE | CITY | BRANCH | YEAR | DATE/TIME
+ * where one team spans consecutive rows and group-level cells (SR.NO, ID,
+ * Team Name, DATE/TIME, often COLLEGE/CITY) were merged in the spreadsheet,
+ * so they export as blanks on the 2nd+ member rows.
+ *
+ * Rules:
+ * - Headers are matched case-/punctuation-insensitively with aliases; title
+ *   rows above the header are skipped. BOM, CRLF and quoted fields are fine.
+ * - A row starts a NEW entry when it has its own SR.NO or ID, or (if the
+ *   sheet has neither) its own team name. A row with all of those blank
+ *   continues the previous entry.
+ * - Only group-level fields are inherited (ID, team name, and college/city
+ *   when blank). Name, email, phone, gender, branch and year are NEVER
+ *   copied between members, and missing contact details stay missing.
+ * - "Wide" sheets with Member 2 Name/Email/Phone columns are supported too.
+ * - Entries without an ID get a stable synthetic id from their content, so
+ *   importing the same file twice never creates duplicates.
+ */
+
+export const MAX_CSV_BYTES = 2 * 1024 * 1024;
+export const MAX_ROWS = 3000;
+export const MAX_TEAM_SIZE = 4;
+
+export type FieldKey =
+  | 'sr_no' | 'registration_id' | 'full_name' | 'team_name' | 'phone' | 'email'
+  | 'gender' | 'college' | 'city' | 'branch' | 'study_year' | 'registered_at'
+  | 'member2_name' | 'member2_email' | 'member2_phone';
+
+export const FIELD_LABELS: Record<FieldKey, string> = {
+  sr_no: 'Serial no.', registration_id: 'Registration ID', full_name: 'Name', team_name: 'Team name',
+  phone: 'Phone', email: 'Email', gender: 'Gender', college: 'College', city: 'City', branch: 'Branch',
+  study_year: 'Year', registered_at: 'Registered at', member2_name: 'Member 2 name',
+  member2_email: 'Member 2 email', member2_phone: 'Member 2 phone',
+};
+
+const ALIASES: Record<FieldKey, string[]> = {
+  sr_no: ['srno', 'sno', 'serialno', 'serialnumber', 'sr', 'slno', 'no'],
+  registration_id: ['id', 'registrationid', 'regid', 'registrationno', 'registrationnumber', 'regno', 'teamid', 'uniqueid', 'participantid'],
+  full_name: ['names', 'name', 'fullname', 'participantname', 'participantsname', 'studentname', 'member1name', 'membername', 'leadername', 'teamleadername'],
+  team_name: ['teamname', 'team'],
+  phone: ['phoneno', 'phone', 'phonenumber', 'mobileno', 'mobile', 'mobilenumber', 'contactno', 'contactnumber', 'contact', 'whatsappno', 'member1phone'],
+  email: ['email', 'emailid', 'emailaddress', 'mail', 'mailid', 'member1email'],
+  gender: ['gender', 'sex'],
+  college: ['college', 'collegename', 'institute', 'institution', 'university', 'organisation', 'organization'],
+  city: ['city', 'location', 'town'],
+  branch: ['branch', 'department', 'dept', 'stream', 'course'],
+  study_year: ['year', 'yearofstudy', 'studyyear', 'currentyear', 'semester'],
+  registered_at: ['datetime', 'date', 'timestamp', 'registeredat', 'registrationdate', 'time'],
+  member2_name: ['member2name', 'secondmembername', 'teammate', 'teammatename', 'partnername'],
+  member2_email: ['member2email', 'member2emailid', 'secondmemberemail', 'teammateemail', 'partneremail'],
+  member2_phone: ['member2phone', 'member2phoneno', 'member2mobile', 'secondmemberphone', 'teammatephone', 'partnerphone'],
+};
+
+export type ColumnMapping = Partial<Record<FieldKey, string>>;
+
+export interface ImportMember {
+  position: number;
+  full_name: string;
+  email: string;
+  phone: string;
+  gender: string;
+  college: string;
+  city: string;
+  branch: string;
+  study_year: string;
+  source_row: number;
 }
 
-export interface ParsedRow {
-  rowIndex: number;
-  raw: Record<string, string>;
-  registration_id?: string;
-  team_name?: string;
-  member1_name?: string;
-  member1_email?: string;
-  member1_phone?: string;
-  member2_name?: string;
-  member2_email?: string;
-  member2_phone?: string;
-  payment_status?: string;
+export interface ImportEntry {
+  registration_id: string;
+  registration_id_generated: boolean;
+  team_name: string;
+  members: ImportMember[];
+  first_row: number;
   errors: string[];
+  warnings: string[];
 }
 
 export interface ImportPreview {
   headers: string[];
-  totalRows: number;
-  validRows: ParsedRow[];
-  invalidRows: ParsedRow[];
-  duplicateRegistrationIds: string[];
+  mapping: ColumnMapping;
+  headerRow: number;
+  totalDataRows: number;
+  entries: ImportEntry[];
+  validEntries: ImportEntry[];
+  invalidEntries: ImportEntry[];
+  fileErrors: string[];
+  warnings: string[];
 }
 
-/** Remove title/blank rows before the real header (common in Google Sheets exports). */
-export function normalizeCsvText(csvText: string): string {
-  const parsed = Papa.parse<string[]>(csvText, { header: false, skipEmptyLines: false });
-  const rows = parsed.data;
-  const norm = (value: unknown) => String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-  const headerIndex = rows.findIndex((row) => {
-    const cells = row.map(norm);
-    return cells.includes('names') && cells.includes('id') && (cells.includes('srno') || cells.includes('email') || cells.includes('emailid'));
-  });
-  return Papa.unparse(headerIndex >= 0 ? rows.slice(headerIndex) : rows.filter((row) => row.some((cell) => String(cell ?? '').trim())));
+export const normHeader = (v: unknown) => String(v ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+const clean = (v: unknown) => String(v ?? '').replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
+
+export function normalizePhone(raw: string): string {
+  const v = clean(raw);
+  if (!v) return '';
+  const plus = v.startsWith('+');
+  const digits = v.replace(/\D/g, '');
+  // Spreadsheets sometimes turn numbers into 9.87654321E+09; keep as typed if so.
+  if (/e\+?\d+/i.test(v)) return v;
+  return (plus ? '+' : '') + digits;
 }
 
-/** Step 1: just parse headers + raw rows, no mapping applied yet. */
-export function parseCsvHeaders(csvText: string): { headers: string[]; rowCount: number } {
-  const result = Papa.parse<Record<string, string>>(normalizeCsvText(csvText), { header: true, skipEmptyLines: true });
-  return { headers: result.meta.fields ?? [], rowCount: result.data.length };
-}
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** Step 2: apply the admin-confirmed column mapping and validate. */
-export function applyMappingAndValidate(csvText: string, mapping: ColumnMapping): ImportPreview {
-  const result = Papa.parse<Record<string, string>>(csvText, { header: true, skipEmptyLines: true });
-  const headers = result.meta.fields ?? [];
-
-  // Google Sheets exports merged team/ID cells as blanks on continuation rows.
-  // Fill down ID/team and fold a second consecutive member row into the same entry.
-  const normalizedRows = result.data.map((row) => ({ ...row }));
-  let lastRegistrationId = '';
-  let lastTeamName = '';
-  for (const raw of normalizedRows) {
-    const id = (raw[mapping.registration_id] ?? '').trim();
-    const continuationRow = !id && Boolean(lastRegistrationId);
-    if (id) lastRegistrationId = id;
-    else if (lastRegistrationId) raw[mapping.registration_id] = lastRegistrationId;
-    if (mapping.team_name) {
-      const team = (raw[mapping.team_name] ?? '').trim();
-      if (team) lastTeamName = team;
-      else if (continuationRow && lastTeamName) raw[mapping.team_name] = lastTeamName;
-      else if (!continuationRow) lastTeamName = '';
+export function autoDetectMapping(headers: string[]): ColumnMapping {
+  const mapping: ColumnMapping = {};
+  const used = new Set<string>();
+  for (const key of Object.keys(ALIASES) as FieldKey[]) {
+    const match = headers.find((h) => !used.has(h) && ALIASES[key].includes(normHeader(h)));
+    if (match) {
+      mapping[key] = match;
+      used.add(match);
     }
   }
-  const foldedRows: Record<string, string>[] = [];
-  const isAuto = (key: string | undefined, field: string) => key === `__auto_${field}`;
-  for (const raw of normalizedRows) {
-    const id = (raw[mapping.registration_id] ?? '').trim();
-    const name = (raw[mapping.member1_name] ?? '').trim();
-    const previous = foldedRows[foldedRows.length - 1];
-    if (id && previous && (previous[mapping.registration_id] ?? '').trim() === id && name) {
-      const existingSecond = mapping.member2_name && !isAuto(mapping.member2_name, 'member2_name')
-        ? (previous[mapping.member2_name] ?? '').trim() : '';
-      if (!existingSecond && (mapping.member2_name || mapping.member2_email || mapping.member2_phone)) {
-        if (mapping.member2_name && (isAuto(mapping.member2_name, 'member2_name') || !existingSecond)) {
-          previous[isAuto(mapping.member2_name, 'member2_name') ? '__auto_member2_name' : mapping.member2_name] =
-            isAuto(mapping.member2_name, 'member2_name') ? name : name;
-        }
-        if (mapping.member2_email) {
-          previous[isAuto(mapping.member2_email, 'member2_email') ? '__auto_member2_email' : mapping.member2_email] =
-            raw[isAuto(mapping.member2_email, 'member2_email') ? mapping.member1_email ?? '' : mapping.member2_email] ?? '';
-        }
-        if (mapping.member2_phone) {
-          previous[isAuto(mapping.member2_phone, 'member2_phone') ? '__auto_member2_phone' : mapping.member2_phone] =
-            raw[isAuto(mapping.member2_phone, 'member2_phone') ? mapping.member1_phone ?? '' : mapping.member2_phone] ?? '';
-        }
-        continue;
+  return mapping;
+}
+
+/** Finds the header row: the first row in the first 15 that matches a name column plus one other known field. */
+function findHeaderRow(rows: string[][]): number {
+  const all = new Set(Object.values(ALIASES).flat());
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const cells = (rows[i] ?? []).map(normHeader);
+    const hasName = cells.some((c) => ALIASES.full_name.includes(c));
+    const known = cells.filter((c) => all.has(c)).length;
+    if (hasName && known >= 2) return i;
+  }
+  return rows.findIndex((r) => r.some((c) => clean(c)));
+}
+
+function syntheticId(team: string, members: ImportMember[]): string {
+  const basis = [team.toLowerCase(), ...members.map((m) => `${m.full_name.toLowerCase()}|${m.email.toLowerCase()}|${m.phone}`)].join('||');
+  return 'AUTO-' + crypto.createHash('sha256').update(basis).digest('hex').slice(0, 12).toUpperCase();
+}
+
+export function parseParticipantsCsv(csvText: string, overrides: ColumnMapping = {}): ImportPreview {
+  const fileErrors: string[] = [];
+  const warnings: string[] = [];
+  const empty = (headers: string[] = [], mapping: ColumnMapping = {}): ImportPreview => ({
+    headers, mapping, headerRow: 0, totalDataRows: 0, entries: [], validEntries: [], invalidEntries: [], fileErrors, warnings,
+  });
+
+  if (Buffer.byteLength(csvText, 'utf8') > MAX_CSV_BYTES) {
+    fileErrors.push(`File is larger than ${MAX_CSV_BYTES / 1024 / 1024} MB.`);
+    return empty();
+  }
+  const text = csvText.replace(/^﻿/, '');
+  if (text.includes('\u0000')) {
+    fileErrors.push('This does not look like a text CSV file. Export the sheet as CSV (UTF-8) and try again.');
+    return empty();
+  }
+
+  const parsed = Papa.parse<string[]>(text, { header: false, skipEmptyLines: false });
+  const rows = (parsed.data as unknown[]).filter(Array.isArray).map((r) => (r as unknown[]).map((c) => String(c ?? '')));
+  if (rows.length === 0) {
+    fileErrors.push('The file is empty.');
+    return empty();
+  }
+
+  const headerIndex = findHeaderRow(rows);
+  if (headerIndex < 0) {
+    fileErrors.push('Could not find a header row.');
+    return empty();
+  }
+  const headers = (rows[headerIndex] ?? []).map((h) => clean(h));
+  const mapping: ColumnMapping = { ...autoDetectMapping(headers) };
+  for (const [k, v] of Object.entries(overrides) as [FieldKey, string | undefined][]) {
+    if (v === undefined) continue;
+    if (v === '') delete mapping[k];
+    else if (headers.includes(v)) mapping[k] = v;
+  }
+  if (!mapping.full_name) {
+    fileErrors.push('No name column found. Expected a header such as "NAMES" or "Name".');
+    return empty(headers, mapping);
+  }
+
+  const col = (key: FieldKey) => (mapping[key] ? headers.indexOf(mapping[key]!) : -1);
+  const idx = Object.fromEntries((Object.keys(ALIASES) as FieldKey[]).map((k) => [k, col(k)])) as Record<FieldKey, number>;
+  const get = (row: string[], key: FieldKey) => (idx[key] >= 0 ? clean(row[idx[key]]) : '');
+
+  const dataRows = rows.slice(headerIndex + 1);
+  if (dataRows.length > MAX_ROWS) {
+    fileErrors.push(`Too many rows (${dataRows.length}). The limit is ${MAX_ROWS}.`);
+    return empty(headers, mapping);
+  }
+
+  const groupKeysPresent = idx.sr_no >= 0 || idx.registration_id >= 0;
+  const entries: ImportEntry[] = [];
+  let current: ImportEntry | null = null;
+  let currentSr = '';
+  let groupCollege = '';
+  let groupCity = '';
+  let totalDataRows = 0;
+
+  dataRows.forEach((row, i) => {
+    const rowNumber = headerIndex + i + 2; // 1-based spreadsheet row
+    if (!row.some((c) => clean(c))) return; // blank line
+    totalDataRows += 1;
+
+    const sr = get(row, 'sr_no');
+    const id = get(row, 'registration_id');
+    const team = get(row, 'team_name');
+    const name = get(row, 'full_name');
+
+    let startsNew: boolean;
+    let mergedIdWarning = false;
+    if (!current) {
+      startsNew = true;
+    } else if (!groupKeysPresent) {
+      startsNew = team !== '' && team.toLowerCase() !== current.team_name.toLowerCase();
+    } else if (id !== '' && id === current.registration_id) {
+      startsNew = false; // same team ID repeated on each member row
+    } else if (sr !== '' && sr !== currentSr) {
+      startsNew = true;
+    } else if (id !== '' && id !== current.registration_id) {
+      // A different ID on a row whose serial no. and team cells are blank
+      // (merged) most likely belongs to the same team; flag it for review.
+      if (idx.sr_no >= 0 && sr === '' && team === '' && current.registration_id !== '') {
+        startsNew = false;
+        mergedIdWarning = true;
+      } else {
+        startsNew = true;
+      }
+    } else {
+      startsNew = false; // all group cells blank → continuation row
+    }
+
+    if (startsNew) {
+      current = {
+        registration_id: id,
+        registration_id_generated: false,
+        team_name: team,
+        members: [],
+        first_row: rowNumber,
+        errors: [],
+        warnings: [],
+      };
+      currentSr = sr;
+      groupCollege = '';
+      groupCity = '';
+      entries.push(current);
+    } else if (current) {
+      if (mergedIdWarning) {
+        current.warnings.push(`Row ${rowNumber}: has its own ID "${id}" but blank serial/team cells — grouped with entry "${current.registration_id}". Check this team.`);
+      }
+      if (id && !current.registration_id) current.registration_id = id;
+      if (team && !current.team_name) current.team_name = team;
+      if (team && current.team_name && team.toLowerCase() !== current.team_name.toLowerCase()) {
+        current.warnings.push(`Row ${rowNumber}: team name "${team}" differs from "${current.team_name}" on the same entry.`);
       }
     }
-    foldedRows.push(raw);
-  }
-  const seen = new Map<string, number>();
-  const rows: ParsedRow[] = foldedRows.map((raw, i) => {
-    const errors: string[] = [];
-    const registration_id = (raw[mapping.registration_id] ?? '').trim();
-    const member1_name = (raw[mapping.member1_name] ?? '').trim();
-    const team_name = mapping.team_name ? (raw[mapping.team_name] ?? '').trim() : undefined;
-    const member1_email = mapping.member1_email ? (raw[mapping.member1_email] ?? '').trim() : undefined;
-    const member1_phone = mapping.member1_phone ? (raw[mapping.member1_phone] ?? '').trim() : undefined;
-    const member2_name = mapping.member2_name ? (raw[mapping.member2_name === '__auto_member2_name' ? '__auto_member2_name' : mapping.member2_name] ?? '').trim() : undefined;
-    const member2_email = mapping.member2_email ? (raw[mapping.member2_email === '__auto_member2_email' ? '__auto_member2_email' : mapping.member2_email] ?? '').trim() : undefined;
-    const member2_phone = mapping.member2_phone ? (raw[mapping.member2_phone === '__auto_member2_phone' ? '__auto_member2_phone' : mapping.member2_phone] ?? '').trim() : undefined;
-    const payment_status = mapping.payment_status ? (raw[mapping.payment_status] ?? '').trim() : undefined;
+    const entry = current!;
 
-    if (!registration_id) errors.push('Missing registration_id');
-    if (!member1_name) errors.push('Missing member1_name');
+    const college = get(row, 'college') || groupCollege;
+    const city = get(row, 'city') || groupCity;
+    groupCollege = college;
+    groupCity = city;
 
-    if (registration_id) {
-      seen.set(registration_id, (seen.get(registration_id) ?? 0) + 1);
+    if (name) {
+      entry.members.push({
+        position: entry.members.length + 1,
+        full_name: name,
+        email: get(row, 'email').toLowerCase(),
+        phone: normalizePhone(get(row, 'phone')),
+        gender: get(row, 'gender'),
+        college,
+        city,
+        branch: get(row, 'branch'),
+        study_year: get(row, 'study_year'),
+        source_row: rowNumber,
+      });
+    } else if (get(row, 'email') || get(row, 'phone')) {
+      entry.errors.push(`Row ${rowNumber}: has contact details but no name.`);
     }
 
-    return {
-      rowIndex: i + 2, // +1 for header row, +1 for 1-indexing
-      raw,
-      registration_id,
-      team_name,
-      member1_name,
-      member1_email,
-      member1_phone,
-      member2_name,
-      member2_email,
-      member2_phone,
-      payment_status,
-      errors,
-    };
+    const m2 = get(row, 'member2_name');
+    if (m2) {
+      entry.members.push({
+        position: entry.members.length + 1,
+        full_name: m2,
+        email: get(row, 'member2_email').toLowerCase(),
+        phone: normalizePhone(get(row, 'member2_phone')),
+        gender: '', college, city, branch: '', study_year: '',
+        source_row: rowNumber,
+      });
+    }
   });
 
-  const duplicateRegistrationIds = [...seen.entries()]
-    .filter(([, count]) => count > 1)
-    .map(([id]) => id);
+  // Validation
+  const idFirstSeen = new Map<string, number>();
+  const emailOwner = new Map<string, number>();
+  entries.forEach((entry, entryIndex) => {
+    if (entry.members.length === 0) entry.errors.push(`Row ${entry.first_row}: no participant name.`);
+    if (entry.members.length > MAX_TEAM_SIZE) entry.errors.push(`Row ${entry.first_row}: ${entry.members.length} members — the maximum team size is ${MAX_TEAM_SIZE}. Check that teams are separated correctly.`);
+    entry.members.forEach((m, i) => {
+      m.position = i + 1;
+      if (m.full_name.length > 120) entry.errors.push(`Row ${m.source_row}: name is too long.`);
+      if (m.email && !EMAIL_RE.test(m.email)) entry.warnings.push(`Row ${m.source_row}: "${m.email}" does not look like a valid email.`);
+      if (!m.email) entry.warnings.push(`Row ${m.source_row}: ${m.full_name} has no email.`);
+      if (!m.phone) entry.warnings.push(`Row ${m.source_row}: ${m.full_name} has no phone number.`);
+      else if (!/e/i.test(m.phone) && (m.phone.replace(/\D/g, '').length < 10 || m.phone.replace(/\D/g, '').length > 13)) {
+        entry.warnings.push(`Row ${m.source_row}: phone "${m.phone}" has an unusual length.`);
+      }
+      if (m.email) {
+        const owner = emailOwner.get(m.email);
+        if (owner !== undefined && owner !== entryIndex) entry.warnings.push(`Row ${m.source_row}: email ${m.email} also appears in another entry.`);
+        else emailOwner.set(m.email, entryIndex);
+      }
+    });
+    if (entry.team_name.length > 120) entry.errors.push(`Row ${entry.first_row}: team name is too long.`);
 
-  for (const row of rows) {
-    if (row.registration_id && duplicateRegistrationIds.includes(row.registration_id)) {
-      row.errors.push('Duplicate registration_id in file');
+    if (!entry.registration_id) {
+      entry.registration_id = syntheticId(entry.team_name, entry.members);
+      entry.registration_id_generated = true;
+    } else if (entry.registration_id.length > 100) {
+      entry.errors.push(`Row ${entry.first_row}: registration ID is too long.`);
     }
-  }
+    const seen = idFirstSeen.get(entry.registration_id);
+    if (seen !== undefined) {
+      entry.errors.push(`Row ${entry.first_row}: registration ID "${entry.registration_id}" was already used by the entry starting on row ${seen}.`);
+    } else {
+      idFirstSeen.set(entry.registration_id, entry.first_row);
+    }
+  });
+
+  if (idx.registration_id < 0) warnings.push('No ID column found — stable IDs were generated from team and member details.');
+  if (idx.email < 0) warnings.push('No email column found.');
+  if (idx.phone < 0) warnings.push('No phone column found.');
 
   return {
     headers,
-    totalRows: rows.length,
-    validRows: rows.filter((r) => r.errors.length === 0),
-    invalidRows: rows.filter((r) => r.errors.length > 0),
-    duplicateRegistrationIds,
+    mapping,
+    headerRow: headerIndex + 1,
+    totalDataRows,
+    entries,
+    validEntries: entries.filter((e) => e.errors.length === 0),
+    invalidEntries: entries.filter((e) => e.errors.length > 0),
+    fileErrors,
+    warnings,
   };
-}
-
-/** Generates the next sequential ENTRY-### code given the highest existing number. */
-export function nextEntryCode(currentMax: number): string {
-  return `ENTRY-${String(currentMax + 1).padStart(3, '0')}`;
 }

@@ -1,87 +1,164 @@
-import { cookies } from 'next/headers';
-import crypto from 'node:crypto';
+import 'server-only';
+import { cookies, headers } from 'next/headers';
+import { NextResponse } from 'next/server';
+import { redirect } from 'next/navigation';
+import { supabaseAdmin } from '@/lib/supabase/server';
 
-export type Role = 'admin' | 'volunteer' | 'judge' | 'student';
+/**
+ * Sessions are server-side rows in `auth_sessions`; the cookie carries an
+ * HMAC-signed pointer to that row plus the claims needed to route requests.
+ *
+ * - Signature + expiry are verified on every read (cheap, no I/O).
+ * - Protected requests then validate the row (`auth_session_validate`),
+ *   which also re-checks the account still exists with the same role, so
+ *   logout, password reset, account deletion, demotion and disqualification
+ *   take effect immediately — the cookie alone is never enough.
+ * - Student hot paths (state/autosave/advance) pass the session id into a
+ *   single SQL function that validates it in the same round trip.
+ */
 
-export interface SessionPayload {
+import {
+  decodeSessionToken, encodeSessionToken, sessionCookieName, SESSION_TTL_SECONDS,
+  type Role, type SessionClaims,
+} from '@/lib/auth/token';
+
+export { ORGANIZER_ROLES, SESSION_TTL_SECONDS, type Role, type SessionClaims } from '@/lib/auth/token';
+
+export interface Session {
+  sid: string;
   role: Role;
-  userId: string; // admins.id, judges.id, or entries.id
-  entryCode?: string; // students only, for convenience/display
-  issuedAt: number;
+  userId: string;
+  entryId: string | null;
+  entryNumber: number | null;
 }
 
-const COOKIE_NAME = 'peb_session';
-const MAX_AGE_SECONDS = 60 * 60 * 12; // 12h — plenty for one event day
-
-function getSecret(): string {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) throw new Error('Missing SESSION_SECRET environment variable.');
-  return secret;
+/** Signature-only read of the cookie. Use only where the session id is validated downstream. */
+export function readSessionClaims(): SessionClaims | null {
+  return decodeSessionToken(cookies().get(sessionCookieName())?.value);
 }
 
-function sign(payload: string): string {
-  return crypto.createHmac('sha256', getSecret()).update(payload).digest('hex');
-}
-
-/** Creates a signed, HTTP-only session cookie. Call from a route handler / server action. */
-export function createSession(payload: SessionPayload) {
-  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const sig = sign(body);
-  const token = `${body}.${sig}`;
-
-  cookies().set(COOKIE_NAME, token, {
+function setSessionCookie(claims: SessionClaims) {
+  cookies().set(sessionCookieName(), encodeSessionToken(claims), {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',
-    maxAge: MAX_AGE_SECONDS,
+    maxAge: claims.exp - claims.iat,
   });
 }
 
-export function destroySession() {
-  cookies().delete(COOKIE_NAME);
+export function clearSessionCookie() {
+  cookies().set(sessionCookieName(), '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+  });
 }
 
-/** Reads + verifies the session cookie. Returns null if missing/invalid/expired. */
-export function getSession(): SessionPayload | null {
-  const token = cookies().get(COOKIE_NAME)?.value;
-  if (!token) return null;
+/** Issues a cookie for a session row that already exists (students: created by student_login). */
+export function issueSessionCookie(input: { sid: string; role: Role; subjectId: string; entryNumber?: number }) {
+  const iat = Math.floor(Date.now() / 1000);
+  setSessionCookie({
+    v: 2,
+    sid: input.sid,
+    role: input.role,
+    sub: input.subjectId,
+    en: input.entryNumber,
+    iat,
+    exp: iat + SESSION_TTL_SECONDS,
+  });
+}
 
-  const [body, sig] = token.split('.');
-  if (!body || !sig) return null;
-  try {
-    const expected = Buffer.from(sign(body), 'hex');
-    const received = Buffer.from(sig, 'hex');
-    if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) return null;
-  } catch {
-    return null;
-  } // tampered
+/** Creates a fresh organizer session row + cookie (always a new id: no session fixation). */
+export async function createOrganizerSession(role: Exclude<Role, 'student'>, subjectId: string) {
+  const db = supabaseAdmin();
+  const userAgent = headers().get('user-agent')?.slice(0, 200) ?? null;
+  const { data, error } = await db
+    .from('auth_sessions')
+    .insert({
+      role,
+      subject_id: subjectId,
+      expires_at: new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString(),
+      user_agent: userAgent,
+    })
+    .select('id')
+    .single();
+  if (error || !data) throw new Error('Could not create session');
+  issueSessionCookie({ sid: data.id, role, subjectId });
+}
 
-  try {
-    const payload: SessionPayload = JSON.parse(
-      Buffer.from(body, 'base64url').toString('utf-8')
-    );
-    const validRoles: Role[] = ['admin', 'volunteer', 'judge', 'student'];
-    if (!payload || !validRoles.includes(payload.role) || typeof payload.userId !== 'string' || !payload.userId) return null;
-    if (typeof payload.issuedAt !== 'number' || !Number.isFinite(payload.issuedAt)) return null;
-    const age = Date.now() - payload.issuedAt;
-    if (age < -5 * 60 * 1000 || age > MAX_AGE_SECONDS * 1000) return null;
-    return payload;
-  } catch {
-    return null;
+/** Ends the current session server-side and clears the cookie. */
+export async function destroySession() {
+  const claims = readSessionClaims();
+  if (claims) {
+    await supabaseAdmin()
+      .from('auth_sessions')
+      .update({ ended_at: new Date().toISOString(), end_reason: 'logout' })
+      .eq('id', claims.sid)
+      .is('ended_at', null);
   }
+  clearSessionCookie();
 }
 
-/** Throws-style guard for route handlers: returns the session or a 401 marker. */
-export function requireRole(role: Role): SessionPayload | null {
-  const session = getSession();
-  if (!session || session.role !== role) return null;
-  return session;
+/** Ends every live session for an account (password reset, deletion, release). */
+export async function endSessionsForSubject(subjectId: string, reason: string) {
+  await supabaseAdmin()
+    .from('auth_sessions')
+    .update({ ended_at: new Date().toISOString(), end_reason: reason })
+    .eq('subject_id', subjectId)
+    .is('ended_at', null);
 }
 
-/** Like requireRole, but accepts any of several roles (e.g. admin OR volunteer). */
-export function requireAnyRole(roles: Role[]): SessionPayload | null {
-  const session = getSession();
-  if (!session || !roles.includes(session.role)) return null;
-  return session;
+/** Full validation: signature + live session row + account still valid for that role. */
+export async function getSession(options: { touch?: boolean; visible?: boolean } = {}): Promise<Session | null> {
+  const claims = readSessionClaims();
+  if (!claims) return null;
+  const { data, error } = await supabaseAdmin().rpc('auth_session_validate', {
+    p_sid: claims.sid,
+    p_touch: options.touch ?? true,
+    p_visible: options.visible ?? null,
+  });
+  if (error || !data || data.valid !== true) return null;
+  if (data.role !== claims.role || data.subject_id !== claims.sub) return null;
+  return {
+    sid: claims.sid,
+    role: claims.role,
+    userId: claims.sub,
+    entryId: data.entry_id ?? null,
+    entryNumber: data.entry_number ?? claims.en ?? null,
+  };
+}
+
+export type ApiAuth = { ok: true; session: Session } | { ok: false; response: NextResponse };
+
+/** Route-handler guard: 401 when not signed in, 403 when signed in with the wrong role. */
+export async function requireApiRole(roles: readonly Role[]): Promise<ApiAuth> {
+  const session = await getSession();
+  if (!session) {
+    return { ok: false, response: NextResponse.json({ error: 'Sign in required.' }, { status: 401, headers: { 'Cache-Control': 'no-store' } }) };
+  }
+  if (!roles.includes(session.role)) {
+    return { ok: false, response: NextResponse.json({ error: 'You do not have access to this action.' }, { status: 403, headers: { 'Cache-Control': 'no-store' } }) };
+  }
+  return { ok: true, session };
+}
+
+/** Page guard for server components: redirects to the right login when access is missing. */
+export async function requirePageRole(roles: readonly Role[], nextPath: string): Promise<Session> {
+  const session = await getSession();
+  if (session && roles.includes(session.role)) return session;
+  if (roles.includes('student') && roles.length === 1) redirect('/student/login');
+  redirect(`/organizer/login?next=${encodeURIComponent(nextPath)}`);
+}
+
+/** Where a signed-in user belongs. */
+export function homeForRole(role: Role): string {
+  switch (role) {
+    case 'admin': return '/admin/dashboard';
+    case 'volunteer': return '/admin/attendance';
+    case 'judge': return '/judge/dashboard';
+    case 'student': return '/student/waiting';
+  }
 }

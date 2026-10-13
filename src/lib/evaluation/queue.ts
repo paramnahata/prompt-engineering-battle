@@ -1,147 +1,126 @@
 import { supabaseAdmin } from '@/lib/supabase/server';
 import {
   evaluateSubmission,
+  GeminiConfigError,
   GeminiRateLimitError,
   GeminiTransientError,
+  RUBRIC_VERSION,
 } from '@/lib/gemini/evaluator';
 
-const MAX_CONCURRENCY = 5; // never fire 80+ Gemini calls at once
-const MAX_RETRIES = 4;
-const BASE_BACKOFF_MS = 1500;
-
 /**
- * Enqueues an evaluation_jobs row for a submission (idempotent via the
- * unique constraint on submission_id — call this right after final submit).
+ * Evaluation queue worker.
+ *
+ * Jobs are claimed atomically in SQL (`claim_evaluation_jobs`, FOR UPDATE
+ * SKIP LOCKED), so two workers — the admin dashboard runner and a cron, or
+ * two admin tabs — can never evaluate (or pay for) the same submission
+ * twice. Jobs stuck in "processing" (worker died) are reclaimed after 3 min.
+ * Retries use next_attempt_at backoff instead of sleeping in the function.
  */
-export async function enqueueEvaluation(submissionId: string) {
-  const db = supabaseAdmin();
-  await db
-    .from('evaluation_jobs')
-    .upsert({ submission_id: submissionId, status: 'queued' }, { onConflict: 'submission_id' });
+
+export const MAX_RETRIES = 4;
+const DEFAULT_CONCURRENCY = Math.max(1, Math.min(8, Number(process.env.GEMINI_CONCURRENCY ?? 4) || 4));
+
+export function backoffSeconds(kind: 'rate_limit' | 'transient', retryCount: number): number {
+  const base = kind === 'rate_limit' ? 30 : 5;
+  return Math.min(600, base * 2 ** retryCount);
 }
 
-/**
- * Processes up to `batchSize` queued jobs with bounded concurrency.
- * Intended to be invoked by a Vercel Cron route (e.g. every 10-15s during
- * the evaluation window) rather than run continuously — see
- * src/app/api/cron/process-evaluations/route.ts.
- */
-export async function processEvaluationQueue(batchSize = 20) {
-  const db = supabaseAdmin();
-
-  const { data: jobs, error } = await db
-    .from('evaluation_jobs')
-    .select('id, submission_id, retry_count')
-    .eq('status', 'queued')
-    .lt('retry_count', MAX_RETRIES)
-    .order('queued_at', { ascending: true })
-    .limit(batchSize);
-  if (error) throw error;
-  if (!jobs || jobs.length === 0) return { processed: 0 };
-
-  let cursor = 0;
-  let processed = 0;
-
-  async function worker() {
-    while (cursor < jobs!.length) {
-      const job = jobs![cursor++]!;
-      await processOne(job.id, job.submission_id, job.retry_count);
-      processed++;
-    }
-  }
-
-  const workers = Array.from({ length: Math.min(MAX_CONCURRENCY, jobs.length) }, worker);
-  await Promise.all(workers);
-
-  return { processed };
+/** Safe, credential-free error text for storage and the admin UI. */
+export function describeError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.replace(/AIza[0-9A-Za-z_\-]{20,}/g, '[redacted]').slice(0, 300);
 }
 
-async function processOne(jobId: string, submissionId: string, retryCount: number) {
+interface ClaimedJob { id: string; submission_id: string; retry_count: number }
+
+async function processOne(job: ClaimedJob): Promise<'completed' | 'retry' | 'failed'> {
   const db = supabaseAdmin();
-
-  await db
-    .from('evaluation_jobs')
-    .update({ status: 'processing', started_at: new Date().toISOString() })
-    .eq('id', jobId);
-
   try {
     const { data: submission, error: subErr } = await db
       .from('submissions')
-      .select('id, prompt_text, ai_output_text, assignment_id')
-      .eq('id', submissionId)
+      .select('id, prompt_text, ai_output_text, assignment:challenge_assignments(challenge:challenges(problem_statement, instructions, constraints, evaluation_criteria, prompt_word_limit))')
+      .eq('id', job.submission_id)
       .single();
-    if (subErr || !submission) throw subErr ?? new Error('submission not found');
-
-    const { data: assignment, error: asgErr } = await db
-      .from('challenge_assignments')
-      .select('challenge_id')
-      .eq('id', submission.assignment_id)
-      .single();
-    if (asgErr || !assignment) throw asgErr ?? new Error('assignment not found');
-
-    const { data: challenge, error: chErr } = await db
-      .from('challenges')
-      .select('problem_statement, instructions, constraints')
-      .eq('id', assignment.challenge_id)
-      .single();
-    if (chErr || !challenge) throw chErr ?? new Error('challenge not found');
+    if (subErr || !submission) throw new Error('Submission not found');
+    const assignment = Array.isArray(submission.assignment) ? submission.assignment[0] : submission.assignment;
+    const challenge = assignment && (Array.isArray(assignment.challenge) ? assignment.challenge[0] : assignment.challenge);
+    if (!challenge) throw new Error('Challenge not found for submission');
 
     const result = await evaluateSubmission({
       problem: challenge.problem_statement,
       instructions: challenge.instructions,
       constraintsText: challenge.constraints,
-      prompt: submission.prompt_text,
-      aiOutput: submission.ai_output_text,
+      evaluationCriteria: challenge.evaluation_criteria,
+      promptWordLimit: challenge.prompt_word_limit,
+      prompt: submission.prompt_text ?? '',
+      aiOutput: submission.ai_output_text ?? '',
     });
 
-    await db.from('ai_evaluations').upsert(
-      {
-        submission_id: submissionId,
-        prompt_clarity: result.prompt_clarity,
-        context: result.context,
-        specificity: result.specificity,
-        creativity: result.creativity,
-        constraint_handling: result.constraint_handling,
-        total: result.total,
-        originality_score: result.originality_score,
-        plagiarism_flag: result.plagiarism_flag,
-        flags: result.flags,
-        summary: result.summary,
-        evaluated_at: new Date().toISOString(),
-      },
-      { onConflict: 'submission_id' }
-    );
+    const { error: upErr } = await db.from('ai_evaluations').upsert({
+      submission_id: job.submission_id,
+      prompt_clarity: result.prompt_clarity,
+      context: result.context,
+      specificity: result.specificity,
+      creativity: result.creativity,
+      constraint_handling: result.constraint_handling,
+      total: result.total,
+      originality_score: result.originality_score,
+      plagiarism_flag: result.plagiarism_flag,
+      flags: result.flags,
+      summary: result.summary,
+      raw_model_response: result.raw,
+      model: result.model,
+      rubric_version: result.rubric_version,
+      evaluated_at: new Date().toISOString(),
+    }, { onConflict: 'submission_id' });
+    if (upErr) throw new Error('Could not store the evaluation');
 
-    await db
-      .from('evaluation_jobs')
-      .update({ status: 'completed', evaluated_at: new Date().toISOString() })
-      .eq('id', jobId);
+    await db.from('evaluation_jobs').update({
+      status: 'completed', evaluated_at: new Date().toISOString(), last_error: null,
+      model: result.model, rubric_version: RUBRIC_VERSION,
+    }).eq('id', job.id).eq('status', 'processing');
+    return 'completed';
   } catch (err) {
-    const isRateLimit = err instanceof GeminiRateLimitError;
-    const isTransient = err instanceof GeminiTransientError || isRateLimit;
-    const nextRetry = retryCount + 1;
-    const willRetry = isTransient && nextRetry < MAX_RETRIES;
-
-    if (willRetry) {
-      const backoffMs = BASE_BACKOFF_MS * 2 ** retryCount;
-      await new Promise((r) => setTimeout(r, backoffMs));
-      await db
-        .from('evaluation_jobs')
-        .update({
-          status: 'queued',
-          retry_count: nextRetry,
-          last_error: String(err instanceof Error ? err.message : err),
-        })
-        .eq('id', jobId);
-    } else {
-      await db
-        .from('evaluation_jobs')
-        .update({
-          status: 'failed',
-          retry_count: nextRetry,
-          last_error: String(err instanceof Error ? err.message : err),
-        })
-        .eq('id', jobId);
-    }
+    const nextRetry = job.retry_count + 1;
+    const kind = err instanceof GeminiRateLimitError ? 'rate_limit' : err instanceof GeminiTransientError ? 'transient' : null;
+    const retryable = kind !== null && nextRetry < MAX_RETRIES && !(err instanceof GeminiConfigError);
+    await db.from('evaluation_jobs').update({
+      status: retryable ? 'queued' : 'failed',
+      retry_count: nextRetry,
+      last_error: describeError(err),
+      next_attempt_at: new Date(Date.now() + (kind ? backoffSeconds(kind, job.retry_count) : 0) * 1000).toISOString(),
+    }).eq('id', job.id).eq('status', 'processing');
+    return retryable ? 'retry' : 'failed';
   }
+}
+
+/**
+ * Processes queued jobs with bounded concurrency until the queue is empty
+ * or the time budget runs out (keeps well under the serverless timeout).
+ */
+export async function processEvaluationQueue(options: { timeBudgetMs?: number; concurrency?: number; maxJobs?: number } = {}) {
+  const timeBudgetMs = options.timeBudgetMs ?? 40_000;
+  const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
+  const maxJobs = options.maxJobs ?? 200;
+  const started = Date.now();
+  const totals = { claimed: 0, completed: 0, retry: 0, failed: 0 };
+  const db = supabaseAdmin();
+
+  // Leave room for one more Gemini call (25s timeout) inside the budget.
+  while (Date.now() - started < timeBudgetMs - 26_000 || totals.claimed === 0) {
+    if (totals.claimed >= maxJobs) break;
+    const { data: jobs, error } = await db.rpc('claim_evaluation_jobs', {
+      p_limit: Math.min(concurrency, maxJobs - totals.claimed),
+      p_max_retries: MAX_RETRIES,
+    });
+    if (error) throw new Error('Could not claim evaluation jobs');
+    const claimed = (jobs ?? []) as ClaimedJob[];
+    if (claimed.length === 0) break;
+    totals.claimed += claimed.length;
+    const outcomes = await Promise.all(claimed.map(processOne));
+    for (const o of outcomes) totals[o] += 1;
+    // Stop early if the provider is throttling us; the backoff will spread retries out.
+    if (outcomes.every((o) => o === 'retry')) break;
+  }
+  return totals;
 }
