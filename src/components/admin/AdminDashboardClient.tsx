@@ -14,7 +14,7 @@ interface StatusVM {
   commonChallenges: { common_slot: number; challenge_code: string; title: string }[];
 }
 
-type Action = 'start' | 'pause' | 'resume' | 'stop' | 'reset' | 'assign_missing';
+type Action = 'start' | 'pause' | 'resume' | 'stop' | 'assign_missing';
 
 export default function AdminDashboardClient() {
   const [status, setStatus] = useState<StatusVM | null>(null);
@@ -54,11 +54,10 @@ export default function AdminDashboardClient() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? `Could not ${action.replace('_', ' ')} Round 1.`);
-      if (action === 'start') setMessage(`Round 1 started — ${body.assigned} entries received challenges.`);
+      if (action === 'start') setMessage(`Round 1 started — ${body.assigned} entries received challenges.${body.warnings?.length ? ` Note: ${body.warnings.join(' ')}` : ''}`);
       if (action === 'assign_missing') setMessage(body.assigned ? `Assigned challenges to ${body.assigned} late arrival(s).` : 'No checked-in entries were missing challenges.');
       if (action === 'stop') setMessage(`Round 1 ended. Outstanding answers from ${body.entriesFinalized} entr${body.entriesFinalized === 1 ? 'y were' : 'ies were'} submitted and queued for evaluation.`);
       if (action === 'resume') setMessage(`Resumed. Every timer was extended by ${body.pausedSeconds}s of pause time.`);
-      if (action === 'reset') setMessage(`Round 1 reset. ${body.assignmentsDeleted} assignments removed; registrations and attendance kept.`);
       setResetOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Action failed.');
@@ -135,7 +134,7 @@ export default function AdminDashboardClient() {
           </div>
           <div className="flex flex-wrap gap-2">
             {notStarted && (
-              <button className="peb-btn-primary min-w-36" disabled={!!busy || !commonReady} onClick={() => run('start', undefined, 'Start Round 1 now? Challenges are assigned to every checked-in entry and the official timer starts.')}>
+              <button className="peb-btn-primary min-w-36" disabled={!!busy} onClick={() => run('start', undefined, 'Start Round 1 now? Challenges are assigned to every checked-in entry and the official timer starts.')}>
                 {busy === 'start' ? 'Starting…' : 'Start Round 1'}
               </button>
             )}
@@ -159,18 +158,26 @@ export default function AdminDashboardClient() {
                 </button>
               </>
             )}
-            {ended && (
-              <button className="rounded-xl border border-violet-400/30 bg-violet-500/10 px-4 py-2 text-sm font-semibold text-violet-200 disabled:opacity-40" disabled={!!busy} onClick={() => setResetOpen(true)}>
-                Start over…
-              </button>
-            )}
           </div>
         </div>
         {message && <div role="status" className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm text-emerald-100">{message}</div>}
         {error && <div role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</div>}
       </section>
 
-      {resetOpen && <ResetDialog busy={busy === 'reset'} onCancel={() => setResetOpen(false)} onConfirm={(text) => run('reset', text)} />}
+      {notStarted && <PreflightPanel />}
+
+      <section className="mb-6 flex flex-col gap-3 rounded-2xl border border-rose-400/20 bg-rose-500/[0.04] p-5 sm:flex-row sm:items-center sm:justify-between" aria-labelledby="reset-heading">
+        <div>
+          <h2 id="reset-heading" className="font-semibold text-rose-100">Reset Competition Data</h2>
+          <p className="mt-1 max-w-2xl text-sm text-slate-300">Clears Round 1 and Round 2 run data for a fresh test or the final run. Participants, PINs, attendance and the challenge pool are kept.</p>
+        </div>
+        <button className="shrink-0 rounded-xl border border-rose-400/40 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-200 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={!!busy || running || paused || !status} onClick={() => setResetOpen(true)}
+          title={running || paused ? 'Stop the round first' : undefined}>
+          Reset competition data…
+        </button>
+      </section>
+      {resetOpen && <ResetDialog onCancel={() => setResetOpen(false)} onDone={(msg) => { setResetOpen(false); setMessage(msg); setError(null); void load().catch(() => {}); }} />}
 
       <LiveParticipantsPanel />
 
@@ -203,31 +210,96 @@ function StatusChip({ status }: { status: string }) {
   return <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wider ${style}`}>{status.replace('_', ' ')}</span>;
 }
 
-function ResetDialog({ busy, onCancel, onConfirm }: { busy: boolean; onCancel: () => void; onConfirm: (text: string) => void }) {
+function ResetDialog({ onCancel, onDone }: { onCancel: () => void; onDone: (message: string) => void }) {
   const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => inputRef.current?.focus(), []);
+  const confirm = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/admin/competition/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: text }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? 'Reset failed.');
+      const d = body.deleted ?? {};
+      onDone(`Competition reset. Removed ${d.assignments ?? 0} assignments, ${d.submissions ?? 0} answers, ${d.ai_evaluations ?? 0} AI evaluations and ${d.round_results ?? 0} results. Both rounds are now Not started.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Reset failed.');
+      setBusy(false);
+    }
+  };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="reset-title" onKeyDown={(e) => e.key === 'Escape' && onCancel()}>
-      <div className="w-full max-w-md rounded-2xl border border-rose-400/30 bg-slate-950 p-6 shadow-2xl">
-        <h2 id="reset-title" className="text-lg font-bold text-rose-200">Start Round 1 over?</h2>
-        <p className="mt-3 text-sm leading-6 text-slate-300">This permanently deletes, for Round 1:</p>
-        <ul className="mt-2 list-disc pl-5 text-sm text-slate-300">
-          <li>all challenge assignments and submitted answers</li>
-          <li>draft history, AI evaluations and score overrides</li>
-          <li>computed results and qualification</li>
-        </ul>
-        <p className="mt-3 text-sm text-emerald-200">Kept: participants, teams, attendance, accounts and the challenge pool.</p>
-        <label htmlFor="reset-confirm" className="mt-4 block text-xs font-semibold text-slate-300">Type <span className="font-mono text-white">START OVER</span> to confirm</label>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="reset-title" onKeyDown={(e) => e.key === 'Escape' && !busy && onCancel()}>
+      <div className="my-8 w-full max-w-lg rounded-2xl border border-rose-400/30 bg-slate-950 p-6 shadow-2xl">
+        <h2 id="reset-title" className="text-lg font-bold text-rose-200">Reset competition data (Round 1 + Round 2)?</h2>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-rose-300">Permanently deleted</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-300">
+              <li>Round status and timers (both rounds → Not started)</li>
+              <li>Challenge assignments for every team</li>
+              <li>Drafts, draft history and submitted answers</li>
+              <li>AI evaluations, the evaluation queue, score overrides</li>
+              <li>Results, ranks, qualification</li>
+              <li>Round 2 states, jury questions and scores, final results</li>
+              <li>Round announcements and in-round activity logs</li>
+            </ul>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300">Kept</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-300">
+              <li>Registrations, teams and member contacts</li>
+              <li>Entry numbers and team PINs</li>
+              <li>Attendance / check-in, login history</li>
+              <li>The challenge pool, Common A/B and rules</li>
+              <li>Organizer accounts and settings</li>
+            </ul>
+          </div>
+        </div>
+        <p className="mt-4 text-xs text-slate-400">Allowed only when no round is running or paused. Signed-in students go back to the waiting room. The next run needs a fresh Start (new assignments) and a new evaluation.</p>
+        <label htmlFor="reset-confirm" className="mt-4 block text-xs font-semibold text-slate-300">Type <span className="font-mono text-white">RESET COMPETITION</span> to confirm</label>
         <input ref={inputRef} id="reset-confirm" className="mt-2 w-full rounded-lg border border-border bg-surface p-2 font-mono" value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" />
+        {error && <p className="mt-3 text-sm text-rose-300" role="alert">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button className="peb-btn-secondary" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button className="rounded-xl bg-rose-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-40" disabled={busy || text !== 'START OVER'} onClick={() => onConfirm(text)}>
-            {busy ? 'Resetting…' : 'Erase Round 1 data'}
+          <button className="rounded-xl bg-rose-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-40" disabled={busy || text !== 'RESET COMPETITION'} onClick={() => void confirm()}>
+            {busy ? 'Resetting…' : 'Reset competition data'}
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+interface PreflightVM { ok: boolean; errors: string[]; warnings: string[]; presentEntries: number; slot3Eligible: number; slot4Eligible: number; entriesWithoutPin: number; common: { slot: number; chosen: boolean; code?: string; difficulty?: string }[] }
+
+function PreflightPanel() {
+  const [p, setP] = useState<PreflightVM | null>(null);
+  const loadPreflight = useCallback(async () => {
+    const r = await fetch('/api/admin/round1/preflight', { cache: 'no-store' });
+    if (!r.ok) throw new Error('preflight');
+    setP(await r.json());
+  }, []);
+  usePolling(loadPreflight, 15_000);
+  if (!p) return null;
+  return (
+    <section className={`mb-6 rounded-2xl border p-5 ${p.ok ? 'border-emerald-300/20 bg-emerald-400/[0.04]' : 'border-amber-300/30 bg-amber-400/[0.05]'}`} aria-labelledby="preflight-heading">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="preflight-heading" className="font-semibold">Before you start</h2>
+        <Link href="/admin/challenges" className="text-xs text-cyan-300 underline">Challenge pool & rules →</Link>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+        <span>Checked in: <b>{p.presentEntries}</b></span>
+        {p.common.map((c) => <span key={c.slot}>Common {c.slot === 1 ? 'A' : 'B'}: <b>{c.chosen ? `${c.code} (${c.difficulty})` : '—'}</b></span>)}
+        <span>Eligible random PS: <b>{p.slot3Eligible}</b> / <b>{p.slot4Eligible}</b></span>
+        <span>Without PIN: <b className={p.entriesWithoutPin ? 'text-amber-200' : ''}>{p.entriesWithoutPin}</b></span>
+      </div>
+      {p.errors.map((e) => <p key={e} className="mt-2 text-sm text-rose-300">✕ {e}</p>)}
+      {p.warnings.map((w) => <p key={w} className="mt-2 text-sm text-amber-200">⚠ {w}</p>)}
+      {p.ok && p.warnings.length === 0 && <p className="mt-2 text-sm text-emerald-300">✓ Ready to start.</p>}
+    </section>
   );
 }
 

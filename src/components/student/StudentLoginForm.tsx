@@ -6,6 +6,7 @@ import { ArrowLeft, KeyRound, Swords } from 'lucide-react';
 
 export default function StudentLoginForm({ organizerSignedIn }: { organizerSignedIn: boolean }) {
   const [entryNumber, setEntryNumber] = useState('');
+  const [pin, setPin] = useState('');
   const [accessCode, setAccessCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -20,7 +21,7 @@ export default function StudentLoginForm({ organizerSignedIn }: { organizerSigne
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-store',
-        body: JSON.stringify({ entryCode: entryNumber.trim(), accessCode: accessCode.trim() }),
+        body: JSON.stringify({ entryCode: entryNumber.trim(), pin: pin.trim(), accessCode: accessCode.trim() }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -57,7 +58,7 @@ export default function StudentLoginForm({ organizerSignedIn }: { organizerSigne
             <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-300/20 bg-cyan-300/[0.07]"><KeyRound className="h-5 w-5 text-cyan-200" /></div>
             <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-violet-300">Secure sign in</p>
             <h2 className="mt-2 text-3xl font-bold tracking-tight">Student login</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-400">Enter the entry number from the registration desk and the 4-digit code shown on the screen.</p>
+            <p className="mt-2 text-sm leading-6 text-slate-400">Enter your entry number and team PIN from the registration desk, plus the 4-digit code shown on the screen.</p>
           </div>
 
           {organizerSignedIn && (
@@ -83,6 +84,21 @@ export default function StudentLoginForm({ organizerSignedIn }: { organizerSigne
               />
             </div>
             <div>
+              <label htmlFor="pin" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">Team PIN</label>
+              <input
+                id="pin"
+                type="password"
+                className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900/80 p-3.5 text-lg tracking-[0.4em] tabular-nums placeholder:text-base placeholder:tracking-normal placeholder:text-slate-600 focus:border-violet-300/50 focus:outline-none focus:ring-2 focus:ring-violet-400/10"
+                placeholder="6-digit PIN"
+                inputMode="numeric"
+                autoComplete="current-password"
+                maxLength={6}
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                required
+              />
+            </div>
+            <div>
               <label htmlFor="accessCode" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">Event access code</label>
               <input
                 id="accessCode"
@@ -97,11 +113,11 @@ export default function StudentLoginForm({ organizerSignedIn }: { organizerSigne
               />
             </div>
             {error && <p role="alert" className="rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</p>}
-            <button className="peb-btn-primary mt-1 w-full" disabled={loading || !entryNumber || accessCode.length !== 4}>
+            <button className="peb-btn-primary mt-1 w-full" disabled={loading || !entryNumber || pin.length !== 6 || accessCode.length !== 4}>
               {loading ? 'Verifying access…' : 'Enter the arena'}
             </button>
           </form>
-          <p className="mt-6 text-center text-xs leading-5 text-slate-500">Having trouble? The registration desk can check your entry number and attendance.</p>
+          <p className="mt-6 text-center text-xs leading-5 text-slate-500">Lost your PIN or having trouble? The registration desk can issue a new PIN and check your attendance.</p>
         </section>
       </div>
     </main>

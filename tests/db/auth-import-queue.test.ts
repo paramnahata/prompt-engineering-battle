@@ -16,12 +16,20 @@ before(async () => {
 after(async () => { await db.end(); });
 
 type R = { ok: boolean; status?: number; code?: string; sid?: string; [k: string]: unknown };
-const login = (n: number, codeOk = true, ip = '10.0.0.1', existing: string | null = null) =>
-  rpc<R>(db, 'student_login', [n, codeOk, ip, 'test-agent', existing, 3600, 60]);
+async function login(n: number, codeOk = true, ip = '10.0.0.1', existing: string | null = null, pinOk = true): Promise<R> {
+  const pre = await rpc<R>(db, 'student_login_precheck', [n, ip]);
+  if (!pre.ok) return pre;
+  return rpc<R>(db, 'student_login', [n, codeOk, pinOk, 'test-agent', existing, 3600, 60]);
+}
 
-test('student login: checks code, existence, attendance and disqualification', async () => {
+test('student login: checks code, PIN, existence, attendance and disqualification', async () => {
   assert.equal((await login(1, false)).code, 'bad_access_code');
-  assert.equal((await login(99)).code, 'not_found');
+  assert.equal((await login(1, true, '10.0.0.1', null, false)).code, 'bad_credentials', 'wrong PIN');
+  assert.equal((await login(99)).code, 'bad_credentials', 'unknown entry looks exactly like a wrong PIN');
+  await db.query(`update entries set pin_hash = null where entry_number = 6`);
+  await db.query(`update entries set present = true where entry_number = 6`);
+  assert.equal((await login(6)).code, 'pin_not_issued');
+  await db.query(`update entries set pin_hash = 'test-hash', present = false where entry_number = 6`);
   assert.equal((await login(6)).code, 'not_checked_in');
   assert.equal((await login(5)).code, 'disqualified');
   const ok = await login(1);
@@ -51,9 +59,12 @@ test('one live device per entry; same browser re-login is idempotent; stale sess
   assert.equal(old.end_reason, 'superseded');
 });
 
-test('per-entry brute-force limit (8 failures / 5 min) and per-IP limit', async () => {
-  for (let i = 0; i < 8; i++) assert.equal((await login(3, false, `10.1.0.${i}`)).code, 'bad_access_code');
-  assert.equal((await login(3, true, '10.1.1.1')).code, 'rate_limited', 'even the right code is refused once locked');
+test('per-entry brute-force limit (6 failures / 10 min, PIN or code) and per-IP limit', async () => {
+  for (let i = 0; i < 3; i++) assert.equal((await login(3, true, `10.1.0.${i}`, null, false)).code, 'bad_credentials');
+  for (let i = 3; i < 6; i++) assert.equal((await login(3, false, `10.1.0.${i}`)).code, 'bad_access_code');
+  assert.equal((await login(3, true, '10.1.1.1')).code, 'rate_limited', 'even the right PIN and code are refused once locked');
+  const pre = await rpc<R>(db, 'student_login_precheck', [3, '10.1.1.2']);
+  assert.equal(pre.code, 'rate_limited', 'locked before any PIN hash is handed out for verification');
   assert.equal((await login(4, true, '10.1.1.1')).ok, true, 'other entries unaffected');
 
   let limited = false;
@@ -137,6 +148,8 @@ test('participant import is atomic, continues numbering and is idempotent', asyn
   const cy = await one<{ team_name: string | null; is_team: boolean }>(db, `select team_name, is_team from entries where registration_id = 'IMP-2'`);
   assert.deepEqual(cy, { team_name: null, is_team: false });
 
+  const three = [{ registration_id: 'IMP-4', team_name: 'Too big', members: [1, 2, 3].map((p) => ({ position: p, full_name: `M${p}` })) }];
+  await assert.rejects(rpc(db, 'import_participants', [JSON.stringify(three), ids.adminId]), 'a third member is rejected by the database');
   const bad = [{ registration_id: 'IMP-3', team_name: '', members: [{ position: 9, full_name: 'X' }] }];
   await assert.rejects(rpc(db, 'import_participants', [JSON.stringify(bad), ids.adminId]));
   assert.equal((await one<{ n: number }>(db, `select count(*)::int n from entries where registration_id = 'IMP-3'`)).n, 0, 'failed import leaves nothing behind');
@@ -156,7 +169,12 @@ test('browser (anon/authenticated) roles cannot call any server function or read
     for (const role of ['anon', 'authenticated']) {
       await client.query(`set role ${role}`);
       for (const sql of [
-        `select student_login(1, true, 'x', 'x', null, 3600, 60)`,
+        `select student_login(1, true, true, 'x', null, 3600, 60)`,
+        `select student_login_precheck(1, 'x')`,
+        `select competition_reset('00000000-0000-0000-0000-000000000000', 'RESET COMPETITION')`,
+        `select set_entry_pins('[]'::jsonb, null, true)`,
+        `select round1_preflight()`,
+        `select * from challenge_import_batches`,
         `select round1_control('stop', '00000000-0000-0000-0000-000000000000', null)`,
         `select import_participants('[]'::jsonb, null)`,
         `select * from claim_evaluation_jobs(1)`,

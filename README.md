@@ -10,8 +10,9 @@ entries.
 
 ## Status
 
-Round 1 (registration, check-in, timed challenges, autosave, AI evaluation,
-results) is implemented and tested. Round 2 / jury scoring is not built yet.
+Round 1 (registration, check-in, per-team PINs, challenge pool import with
+difficulty rules, timed challenges, autosave, AI evaluation, results, global
+competition reset) is implemented and tested. Round 2 / jury scoring is not built yet.
 See **[docs/EVENT_READINESS.md](docs/EVENT_READINESS.md)** for the audit,
 security review, authorization matrix, test and load-test results, the
 deployment runbook and the go/no-go checklist.
@@ -22,7 +23,8 @@ deployment runbook and the go/no-go checklist.
 npm test                         # unit tests
 PGHOST=/tmp PGPORT=54329 npm run test:db   # SQL functions against a local Postgres (tests/db/reset.sh)
 tests/stack/start.sh 220         # local staging stack: Postgres + PostgREST + next start + mock Gemini
-npm run test:api                 # HTTP authorization + end-to-end flow against that stack
+tests/api/run.sh                 # HTTP authorization + end-to-end flow against that stack (resets synthetic sessions/PINs first)
+tests/db/rollback.sh             # migrations 0004/0005 up → down → up on a scratch DB
 tests/load/run-local.sh          # k6 load test (200 students) — staging/synthetic data only
 ```
 
@@ -43,15 +45,18 @@ npm run dev
 ## Supabase setup
 
 1. Create a project at supabase.com.
-2. Apply `supabase/migrations/0001` … `0004` in order (SQL editor or
+2. Apply `supabase/migrations/0001` … `0005` in order (SQL editor or
    `supabase db push`). `0003` is a no-op on the original production
    database; `0004` adds sessions, rate limits and the competition SQL
-   functions (callable only with the service-role/secret key).
+   functions; `0005` adds team PINs, the challenge pool workflow and the
+   global reset (all callable only with the service-role/secret key).
+   Rollback scripts are in `supabase/rollback/`.
 3. Set `SUPABASE_URL` and `SUPABASE_SECRET_KEY` (server-only). The browser
    never talks to Supabase directly.
 4. Seed `rounds` (round_number 1 with `config.challenge_seconds` /
    `round_duration_seconds`), at least one admin account, and the challenge
-   pool; then pick Common A/B on the Challenge pool page.
+   pool (Challenge pool → Import); then pick Common A/B and the difficulty
+   rules, and generate team PINs on the Registration desk.
 
 ## Gemini setup
 

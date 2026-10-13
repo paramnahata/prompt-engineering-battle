@@ -25,7 +25,7 @@ export async function GET(_req: NextRequest, { params }: { params: { entryId: st
 
     const { data: assignments, error: asgErr } = await db
       .from('challenge_assignments')
-      .select('id, position, is_common, challenge:challenges(challenge_code, title, problem_statement, prompt_word_limit, output_char_limit)')
+      .select('id, position, is_common, challenge_snapshot, challenge:challenges(challenge_code, title, problem_statement, prompt_word_limit, output_char_limit)')
       .eq('entry_id', entry.id)
       .order('position', { ascending: true });
     if (asgErr) throw asgErr;
@@ -47,7 +47,9 @@ export async function GET(_req: NextRequest, { params }: { params: { entryId: st
         ])
       : [{ data: [] }, { data: [] }, { data: [] }];
 
-    const ps = (assignments ?? []).map((a) => {
+    const ps = (assignments ?? []).map(({ challenge_snapshot: snap, ...a }) => {
+      // Show the challenge as it was assigned; fall back to the live row for old data.
+      if (snap) a = { ...a, challenge: snap as never };
       const submission = (submissions ?? []).find((s) => s.assignment_id === a.id) ?? null;
       const sid = submission?.id;
       return {

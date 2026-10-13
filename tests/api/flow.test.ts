@@ -20,6 +20,7 @@ const student = new Actor('student');
 const otherDevice = new Actor('student other device');
 let entryNumber = 0;
 let entryId = '';
+let pin = '';
 
 before(async () => {
   for (const [a, email] of [[admin, 'admin@staging.local'], [desk, 'desk@staging.local']] as const) {
@@ -63,22 +64,39 @@ test('CSV import: preview groups teams, confirm assigns next entry numbers, re-i
   entryId = pirates.id;
 });
 
+test('PIN issuance: shown once to the desk, never listed; required for login', async () => {
+  const code = accessCode(env.EVENT_SECRET!);
+  await desk.req('POST', '/api/admin/attendance', { entryId, present: true });
+  await db.query('update entries set pin_hash = null, pin_set_at = null where id = $1', [entryId]); // re-runnable on the same staging DB
+  const noPin = await student.req('POST', '/api/student/login', { entryCode: String(entryNumber), pin: '482913', accessCode: code });
+  assert.equal(noPin.json.code, 'pin_not_issued');
+  const issued = await desk.req('POST', '/api/admin/pins', { action: 'reissue', entryId });
+  assert.equal(issued.status, 200, JSON.stringify(issued.json));
+  assert.match(issued.headers.get('cache-control') ?? '', /no-store/);
+  pin = (issued.json.issued as { pin: string }[])[0]!.pin;
+  assert.match(pin, /^\d{6}$/);
+  const list = await desk.req('GET', '/api/admin/participants');
+  assert.ok(!list.text.includes(pin), 'PIN never appears in participant listings');
+  assert.ok(!list.text.includes('pin_hash') && !list.text.includes('s1$') && !list.text.includes('s2$'), 'hash never leaves the server');
+  await desk.req('POST', '/api/admin/attendance', { entryId, present: false });
+});
+
 test('check-in gates login; one device at a time; the desk can release a device', async () => {
   const code = accessCode(env.EVENT_SECRET!);
   await desk.req('POST', '/api/admin/attendance', { entryId, present: false });
-  const blocked = await student.req('POST', '/api/student/login', { entryCode: String(entryNumber), accessCode: code });
+  const blocked = await student.req('POST', '/api/student/login', { entryCode: String(entryNumber), pin, accessCode: code });
   assert.equal(blocked.status, 403);
   const mark = await desk.req('POST', '/api/admin/attendance', { entryId, present: true });
   assert.equal(mark.status, 200);
-  const ok = await student.req('POST', '/api/student/login', { entryCode: String(entryNumber), accessCode: code });
+  const ok = await student.req('POST', '/api/student/login', { entryCode: String(entryNumber), pin, accessCode: code });
   assert.equal(ok.status, 200, JSON.stringify(ok.json));
-  const again = await student.req('POST', '/api/student/login', { entryCode: String(entryNumber), accessCode: code });
+  const again = await student.req('POST', '/api/student/login', { entryCode: String(entryNumber), pin, accessCode: code });
   assert.equal(again.status, 200, 'same browser: idempotent');
-  const second = await otherDevice.req('POST', '/api/student/login', { entryCode: String(entryNumber), accessCode: code });
+  const second = await otherDevice.req('POST', '/api/student/login', { entryCode: String(entryNumber), pin, accessCode: code });
   assert.equal(second.status, 409);
   assert.equal((await desk.req('POST', '/api/admin/sessions/release', { entryId })).status, 200);
   assert.equal((await student.req('GET', '/api/student/waiting/state')).status, 401, 'released device is signed out');
-  const relog = await student.req('POST', '/api/student/login', { entryCode: String(entryNumber), accessCode: code });
+  const relog = await student.req('POST', '/api/student/login', { entryCode: String(entryNumber), pin, accessCode: code });
   assert.equal(relog.status, 200);
   const hb = await student.req('POST', '/api/student/heartbeat', { visible: true });
   assert.equal(hb.status, 200);

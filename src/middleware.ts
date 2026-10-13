@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server';
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const DEFAULT_MAX_BYTES = 256 * 1024;
 const IMPORT_MAX_BYTES = 3 * 1024 * 1024;
+const CHALLENGE_IMPORT_MAX_BYTES = 6 * 1024 * 1024;
 
 export function middleware(req: NextRequest) {
   if (MUTATING.has(req.method)) {
@@ -35,7 +36,9 @@ export function middleware(req: NextRequest) {
       return NextResponse.json({ error: 'Cross-origin request blocked.' }, { status: 403 });
     }
 
-    const limit = req.nextUrl.pathname === '/api/admin/participants/import' ? IMPORT_MAX_BYTES : DEFAULT_MAX_BYTES;
+    const path = req.nextUrl.pathname;
+    const limit = path === '/api/admin/challenges/import' ? CHALLENGE_IMPORT_MAX_BYTES
+      : path === '/api/admin/participants/import' ? IMPORT_MAX_BYTES : DEFAULT_MAX_BYTES;
     const length = Number(req.headers.get('content-length') ?? '0');
     if (Number.isFinite(length) && length > limit) {
       return NextResponse.json({ error: 'Request is too large.' }, { status: 413 });

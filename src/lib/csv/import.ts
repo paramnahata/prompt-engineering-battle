@@ -26,7 +26,7 @@ import crypto from 'node:crypto';
 
 export const MAX_CSV_BYTES = 2 * 1024 * 1024;
 export const MAX_ROWS = 3000;
-export const MAX_TEAM_SIZE = 4;
+export const MAX_TEAM_SIZE = 2;
 
 export type FieldKey =
   | 'sr_no' | 'registration_id' | 'full_name' | 'team_name' | 'phone' | 'email'

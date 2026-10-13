@@ -6,6 +6,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(cd "$HERE/../.." && pwd)"
 DB=peb_stage; ENTRIES="${1:-220}"; RUN="${STACK_DIR:-/tmp/peb-stack}"; mkdir -p "$RUN"
 pkill -f "[p]ostgrest $RUN" 2>/dev/null || true; pkill -f "[p]roxy.mjs" 2>/dev/null || true; pkill -f "[m]ock-gemini.mjs" 2>/dev/null || true; pkill -f "[n]ext start -p 3100" 2>/dev/null || true; pkill -f "[n]ext-server" 2>/dev/null || true
 "$ROOT/tests/db/reset.sh" "$DB" >/dev/null
+export SESSION_SECRET=local-staging-session-secret-0123456789abcdef
 ( cd "$ROOT" && npx tsx tests/stack/seed-staging.ts "$DB" "$ENTRIES" )
 
 JWT_SECRET="local-staging-jwt-secret-$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
@@ -27,7 +28,7 @@ nohup node "$HERE/mock-gemini.mjs" > "$RUN/mock-gemini.log" 2>&1 &
 cat > "$RUN/app.env" <<ENV
 SUPABASE_URL=http://127.0.0.1:54321
 SUPABASE_SECRET_KEY=$SERVICE_KEY
-SESSION_SECRET=local-staging-session-secret-0123456789abcdef
+SESSION_SECRET=$SESSION_SECRET
 EVENT_SECRET=local-staging-event-secret
 CRON_SECRET=local-staging-cron-secret-123456
 GEMINI_API_KEY=mock-key-not-real

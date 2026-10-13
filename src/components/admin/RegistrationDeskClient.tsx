@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AccessCodePanel from './AccessCodePanel';
 import CsvImportPanel from './CsvImportPanel';
+import { EntryEditor, PinSlips, type IssuedPin } from './DeskTools';
 import { usePolling } from '@/hooks/usePolling';
 import { matchesFilter, searchParticipants } from '@/lib/participant-search';
 
@@ -26,6 +27,8 @@ export interface EntryVM {
   present: boolean;
   present_at: string | null;
   disqualified: boolean;
+  disqualified_reason: string | null;
+  pin_set_at: string | null;
   team_members: TeamMember[];
 }
 
@@ -86,6 +89,30 @@ export default function RegistrationDeskClient({ canImport = false }: { canImpor
   }, [toast]);
 
   const presentCount = entries?.filter((e) => e.present).length ?? 0;
+  const withoutPin = entries?.filter((e) => !e.pin_set_at).length ?? 0;
+  const [issued, setIssued] = useState<IssuedPin[] | null>(null);
+  const [editing, setEditing] = useState<EntryVM | 'new' | null>(null);
+  const [issuing, setIssuing] = useState(false);
+
+  const issuePins = async (entry?: EntryVM) => {
+    const msg = entry
+      ? `Issue a NEW PIN for entry ${entry.entry_number}? ${entry.pin_set_at ? 'The old PIN stops working and the team is signed out.' : ''}`
+      : `Generate PINs for the ${withoutPin} entr${withoutPin === 1 ? 'y' : 'ies'} without one? They are shown once — print or download them before closing.`;
+    if (!window.confirm(msg)) return;
+    setIssuing(true);
+    try {
+      const res = await fetch('/api/admin/pins', { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
+        body: JSON.stringify(entry ? { action: 'reissue', entryId: entry.id } : { action: 'issue_missing' }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? 'Could not issue PINs.');
+      setIssued(body.issued ?? []);
+      void load().catch(() => {});
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'Could not issue PINs.');
+    } finally {
+      setIssuing(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -94,11 +121,15 @@ export default function RegistrationDeskClient({ canImport = false }: { canImpor
           <h1 className="text-2xl font-semibold">Registration Desk</h1>
           <p className="text-sm text-muted">Search, check in, and manage participants.</p>
         </div>
-        {entries && <p className="text-sm text-slate-300"><span className="font-semibold text-emerald-300">{presentCount}</span> of {entries.length} entries checked in</p>}
+        <div className="flex flex-wrap items-center gap-3">
+          {entries && <p className="text-sm text-slate-300"><span className="font-semibold text-emerald-300">{presentCount}</span> of {entries.length} checked in · <span className={withoutPin ? 'text-amber-200' : ''}>{withoutPin} without PIN</span></p>}
+          {canImport && <button className="peb-btn-secondary py-2" disabled={issuing || withoutPin === 0} onClick={() => void issuePins()}>{issuing ? 'Generating…' : 'Generate missing PINs'}</button>}
+          {canImport && <button className="peb-btn-secondary py-2" onClick={() => setEditing('new')}>Add entry</button>}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
-        <CheckInPanel entries={entries} pending={pending} onSetPresent={setPresent} />
+        <CheckInPanel entries={entries} pending={pending} onSetPresent={setPresent} onIssuePin={(e) => void issuePins(e)} onEdit={canImport ? (e) => setEditing(e) : undefined} issuing={issuing} />
         <AccessCodePanel />
       </div>
 
@@ -108,12 +139,18 @@ export default function RegistrationDeskClient({ canImport = false }: { canImpor
 
       <ParticipantsTable entries={entries} pending={pending} onSetPresent={setPresent} canReset={canImport} onReset={() => void load().catch(() => {})} />
 
+      {issued && <PinSlips pins={issued} onClose={() => setIssued(null)} />}
+      {editing && <EntryEditor entry={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={(msg) => { setEditing(null); setToast(msg); void load().catch(() => {}); }} />}
+
       {toast && <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-sm shadow-2xl" role="status">{toast}</div>}
     </div>
   );
 }
 
-function CheckInPanel({ entries, pending, onSetPresent }: { entries: EntryVM[] | null; pending: Set<string>; onSetPresent: (e: EntryVM, p: boolean) => void }) {
+function CheckInPanel({ entries, pending, onSetPresent, onIssuePin, onEdit, issuing }: {
+  entries: EntryVM[] | null; pending: Set<string>; onSetPresent: (e: EntryVM, p: boolean) => void;
+  onIssuePin: (e: EntryVM) => void; onEdit?: (e: EntryVM) => void; issuing: boolean;
+}) {
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [highlight, setHighlight] = useState(0);
@@ -206,12 +243,19 @@ function CheckInPanel({ entries, pending, onSetPresent }: { entries: EntryVM[] |
             </span>
           </div>
           <MemberList members={sortedMembers(selected)} />
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 p-2 text-sm">
+            <span>Team PIN: {selected.pin_set_at ? <span className="text-emerald-300">issued {new Date(selected.pin_set_at).toLocaleString()}</span> : <span className="text-amber-200">not issued</span>}</span>
+            <span className="flex gap-2">
+              <button className="rounded-lg border border-white/15 px-3 py-1 text-xs hover:bg-white/5 disabled:opacity-40" disabled={issuing} onClick={() => onIssuePin(selected)}>{selected.pin_set_at ? 'Issue new PIN' : 'Issue PIN'}</button>
+              {onEdit && <button className="rounded-lg border border-white/15 px-3 py-1 text-xs hover:bg-white/5" onClick={() => onEdit(selected)}>Edit entry</button>}
+            </span>
+          </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <button className="peb-btn-primary flex-1" onClick={() => onSetPresent(selected, true)} disabled={pending.has(selected.id) || selected.present}>Mark present</button>
             <button className="peb-btn-secondary flex-1" onClick={() => onSetPresent(selected, false)} disabled={pending.has(selected.id) || !selected.present}>Mark absent</button>
           </div>
           <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted">
-            <span>Students sign in with entry number <b className="text-white">{selected.entry_number}</b> + the access code. One device per entry.</span>
+            <span>Students sign in with entry number <b className="text-white">{selected.entry_number}</b>, their team PIN and the on-screen access code. One device per entry.</span>
             <button className="shrink-0 underline hover:text-white" onClick={() => void release(selected)}>Release device</button>
           </div>
           {releaseMsg && <p className="mt-2 text-xs text-cyan-200" role="status">{releaseMsg}</p>}
@@ -245,17 +289,11 @@ function ParticipantsTable({ entries, pending, onSetPresent, canReset, onReset }
 }) {
   const [filter, setFilter] = useState('');
   const [status, setStatus] = useState<'all' | 'present' | 'absent'>('all');
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [resetError, setResetError] = useState<string | null>(null);
 
   const rows = useMemo(() => (entries ?? []).filter((e) =>
     (status === 'all' || (status === 'present') === e.present) && matchesFilter(e, filter)), [entries, filter, status]);
 
-  const toggle = (id: string) => setExpanded((s) => {
-    const n = new Set(s);
-    if (n.has(id)) n.delete(id); else n.add(id);
-    return n;
-  });
 
   const resetAll = async () => {
     const typed = window.prompt(`This deletes ALL ${entries?.length ?? 0} participants (allowed only before Round 1 starts). Type DELETE ALL PARTICIPANTS to confirm.`);
@@ -292,14 +330,14 @@ function ParticipantsTable({ entries, pending, onSetPresent, canReset, onReset }
             <thead>
               <tr className="border-b border-border text-left text-xs text-muted">
                 <th className="w-16 py-2 pr-3">Entry</th><th className="py-2 pr-3">Team</th><th className="py-2 pr-3">Member</th>
-                <th className="py-2 pr-3">Email</th><th className="py-2 pr-3">Phone</th><th className="py-2 pr-3">College / branch</th><th className="py-2">Attendance</th>
+                <th className="py-2 pr-3">Email</th><th className="py-2 pr-3">Phone</th><th className="py-2 pr-3">College / branch</th><th className="py-2 pr-3">PIN</th><th className="py-2">Attendance</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((e) => {
                 const members = sortedMembers(e);
-                const showAll = expanded.has(e.id) || members.length <= 2;
-                const visible = showAll ? members : members.slice(0, 1);
+                // Teams have at most 2 members, so every member is always shown.
+                const visible = members.length ? members : [{ member_position: 0, full_name: '—', email: null, phone: null, gender: null, college: null, city: null, branch: null, study_year: null }];
                 return visible.map((m, i) => (
                   <tr key={`${e.id}-${m.member_position}`} className={`align-top ${i === visible.length - 1 ? 'border-b border-border/60' : ''}`}>
                     {i === 0 && (
@@ -307,7 +345,6 @@ function ParticipantsTable({ entries, pending, onSetPresent, canReset, onReset }
                         <td className="py-2.5 pr-3 font-semibold tabular-nums" rowSpan={visible.length}>{e.entry_number}</td>
                         <td className="py-2.5 pr-3" rowSpan={visible.length}>
                           {e.team_name || (e.is_team ? <i className="text-muted">Unnamed team</i> : <span className="text-muted">Individual</span>)}
-                          {!showAll && <button className="mt-1 block text-xs text-cyan-300 underline" onClick={() => toggle(e.id)}>+{members.length - 1} more</button>}
                         </td>
                       </>
                     )}
@@ -315,6 +352,7 @@ function ParticipantsTable({ entries, pending, onSetPresent, canReset, onReset }
                     <td className="break-all py-2.5 pr-3 text-xs text-muted">{m.email || <i>—</i>}</td>
                     <td className="whitespace-nowrap py-2.5 pr-3 text-xs text-muted">{m.phone || <i>—</i>}</td>
                     <td className="py-2.5 pr-3 text-xs text-muted">{[m.college, m.branch].filter(Boolean).join(' · ') || '—'}</td>
+                    {i === 0 && <td className="py-2.5 pr-3 text-xs" rowSpan={visible.length}>{e.pin_set_at ? <span className="text-emerald-300">Issued</span> : <span className="text-amber-200">—</span>}</td>}
                     {i === 0 && (
                       <td className="whitespace-nowrap py-2.5" rowSpan={visible.length}>
                         <button

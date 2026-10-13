@@ -20,7 +20,8 @@ const control = (action: string, confirm: string | null = null) => rpc<R>(db, 'r
 test('start is refused until both common challenges are chosen', async () => {
   const r = await control('start');
   assert.equal(r.ok, false);
-  assert.equal(r.code, 'common_not_configured');
+  assert.equal(r.code, 'preflight_failed');
+  assert.match(String(r.message), /Common A is not chosen/);
   const round = await one<{ status: string }>(db, `select status from rounds where round_number = 1`);
   assert.equal(round.status, 'not_started');
 });

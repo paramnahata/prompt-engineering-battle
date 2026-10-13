@@ -1,7 +1,7 @@
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { Actor, accessCode, loadStackEnv, signToken, COOKIE } from './client';
+import { Actor, accessCode, loadStackEnv, signToken, stagingPin, COOKIE } from './client';
 
 /**
  * Endpoint-by-endpoint authorization tests against the local staging stack
@@ -49,6 +49,21 @@ const ENDPOINTS: { method: string; path: string; body?: unknown; allow: Role[] }
   { method: 'GET', path: '/api/admin/ai-settings', allow: ['admin'] },
   { method: 'POST', path: '/api/admin/ai-settings', body: { apiKey: 'short' }, allow: ['admin'] },
   { method: 'DELETE', path: '/api/admin/ai-settings', allow: ['admin'] },
+  { method: 'POST', path: '/api/admin/participants', body: { members: [] }, allow: ['admin'] },
+  { method: 'PATCH', path: `/api/admin/participants/${NIL}`, body: { members: [] }, allow: ['admin'] },
+  { method: 'POST', path: '/api/admin/pins', body: { action: 'reissue', entryId: NIL }, allow: ['volunteer', 'admin'] },
+  { method: 'POST', path: '/api/admin/pins', body: { action: 'issue_missing' }, allow: ['admin'] },
+  { method: 'POST', path: '/api/admin/competition/reset', body: { confirm: 'nope' }, allow: ['admin'] },
+  { method: 'GET', path: '/api/admin/round1/preflight', allow: ['admin'] },
+  { method: 'POST', path: '/api/admin/challenges', body: { challenge_code: '' }, allow: ['admin'] },
+  { method: 'DELETE', path: '/api/admin/challenges', body: { ids: [NIL], confirm: 'nope' }, allow: ['admin'] },
+  { method: 'GET', path: `/api/admin/challenges/${NIL}`, allow: ['admin'] },
+  { method: 'PATCH', path: `/api/admin/challenges/${NIL}`, body: {}, allow: ['admin'] },
+  { method: 'GET', path: '/api/admin/challenges/rules', allow: ['admin'] },
+  { method: 'PUT', path: '/api/admin/challenges/rules', body: {}, allow: ['admin'] },
+  { method: 'GET', path: '/api/admin/challenges/import', allow: ['admin'] },
+  { method: 'POST', path: '/api/admin/challenges/import', body: { fileName: 'x', sheets: [] }, allow: ['admin'] },
+  { method: 'POST', path: `/api/admin/challenges/import/${NIL}`, body: { action: 'discard' }, allow: ['admin'] },
   { method: 'GET', path: '/api/student/round1/state', allow: ['student'] },
   { method: 'POST', path: '/api/student/round1/autosave', body: { submissionId: NIL, promptText: '', aiOutputText: '' }, allow: ['student'] },
   { method: 'POST', path: '/api/student/round1/advance', body: { submissionId: NIL }, allow: ['student'] },
@@ -67,9 +82,9 @@ before(async () => {
   await orgLogin(volunteer, 'desk@staging.local');
   await orgLogin(judge, 'judge@staging.local');
   const code = accessCode(env.EVENT_SECRET!);
-  const s1 = await student.req('POST', '/api/student/login', { entryCode: '201', accessCode: code });
+  const s1 = await student.req('POST', '/api/student/login', { entryCode: '201', pin: stagingPin(201), accessCode: code });
   assert.equal(s1.status, 200, JSON.stringify(s1.json));
-  const s2 = await student2.req('POST', '/api/student/login', { entryCode: '202', accessCode: code });
+  const s2 = await student2.req('POST', '/api/student/login', { entryCode: '202', pin: stagingPin(202), accessCode: code });
   assert.equal(s2.status, 200, JSON.stringify(s2.json));
 
   const raw = decodeURIComponent(student.cookie!.split('=').slice(1).join('='));
@@ -154,9 +169,9 @@ test('login: rate limits, generic errors, no account enumeration by message, no 
   }
   assert.ok(limited, 'per-account lockout');
 
-  const wrongCode = await anon.req('POST', '/api/student/login', { entryCode: '150', accessCode: '0000' === accessCode(env.EVENT_SECRET!) ? '1111' : '0000' });
+  const wrongCode = await anon.req('POST', '/api/student/login', { entryCode: '150', pin: stagingPin(150), accessCode: '0000' === accessCode(env.EVENT_SECRET!) ? '1111' : '0000' });
   assert.equal(wrongCode.status, 401);
-  const sqli = await anon.req('POST', '/api/student/login', { entryCode: "1' OR '1'='1", accessCode: '1234' });
+  const sqli = await anon.req('POST', '/api/student/login', { entryCode: "1' OR '1'='1", pin: '123456', accessCode: '1234' });
   assert.equal(sqli.status, 400);
 
   for (const next of ['//evil.example', '/\\evil.example', 'https://evil.example', '/%5Cevil.example']) {

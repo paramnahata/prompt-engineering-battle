@@ -10,9 +10,11 @@ ADMIN=$(q "select id from admins where email='admin@staging.local'")
 
 echo "== reset staging round state"
 q "select round1_control('stop', '$ADMIN', null)" >/dev/null
-q "select round1_control('reset', '$ADMIN', 'START OVER')" >/dev/null
+q "select competition_reset('$ADMIN', 'RESET COMPETITION')" >/dev/null
 q "update auth_sessions set ended_at = now(), end_reason = 'load_reset' where ended_at is null; delete from rate_limits;"
 curl -s 127.0.0.1:54340/reset >/dev/null
+# API tests re-issue a few PINs; put every synthetic entry back on its deterministic staging PIN.
+( cd "$HERE/../.." && npx tsx tests/stack/restore-pins.ts "$DB" "$ENTRIES" )
 
 echo "== scenario 1: login burst ($ENTRIES simultaneous)"
 "$K6" run --quiet --summary-export "$OUT/login-burst.json" -e ENTRIES="$ENTRIES" -e EVENT_SECRET="$EVENT_SECRET" "$HERE/login-burst.js" | tee "$OUT/login-burst.txt" | tail -25 || true
@@ -49,4 +51,15 @@ q "select 'jobs', status, count(*) from evaluation_jobs group by status"
 q "select 'ai_evaluations', count(*), count(distinct submission_id) from ai_evaluations"
 q "select 'submissions_total', count(*) from submissions"
 echo "   mock gemini: $(curl -s 127.0.0.1:54340/stats)"
+
+echo "== reset while an evaluation batch is in flight"
+q "update evaluation_jobs set status = 'queued', retry_count = 0, next_attempt_at = now(); delete from ai_evaluations;"
+( curl -s -X POST "$APP_URL/api/admin/evaluations" -H 'Content-Type: application/json' -H "Cookie: $COOKIE" -d '{"action":"run"}' > "$OUT/inflight-eval.json" ) &
+sleep 3
+RESET=$(curl -s -w ' HTTP %{http_code}' -X POST "$APP_URL/api/admin/competition/reset" -H 'Content-Type: application/json' -H "Cookie: $COOKIE" -d '{"confirm":"RESET COMPETITION"}')
+wait
+echo "   reset: $RESET"
+echo "   in-flight eval batch returned: $(cat "$OUT/inflight-eval.json")"
+q "select 'after_reset', (select count(*) from challenge_assignments), (select count(*) from submissions), (select count(*) from evaluation_jobs), (select count(*) from ai_evaluations), (select string_agg(status, ',') from rounds)"
+q "select 'kept', (select count(*) from entries), (select count(*) from entries where pin_hash is not null), (select count(*) from entries where present), (select count(*) from challenges)"
 q "update rounds set config = config || '{\"challenge_seconds\": 450}'::jsonb where round_number = 1"

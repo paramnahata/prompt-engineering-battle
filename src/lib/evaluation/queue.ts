@@ -38,12 +38,23 @@ async function processOne(job: ClaimedJob): Promise<'completed' | 'retry' | 'fai
   try {
     const { data: submission, error: subErr } = await db
       .from('submissions')
-      .select('id, prompt_text, ai_output_text, assignment:challenge_assignments(challenge:challenges(problem_statement, instructions, constraints, evaluation_criteria, prompt_word_limit))')
+      .select('id, prompt_text, ai_output_text, assignment:challenge_assignments(challenge_snapshot, challenge:challenges(problem_statement, instructions, constraints, evaluation_criteria, prompt_word_limit))')
       .eq('id', job.submission_id)
       .single();
     if (subErr || !submission) throw new Error('Submission not found');
     const assignment = Array.isArray(submission.assignment) ? submission.assignment[0] : submission.assignment;
-    const challenge = assignment && (Array.isArray(assignment.challenge) ? assignment.challenge[0] : assignment.challenge);
+    // Evaluate against the challenge exactly as it was assigned (later pool edits don't change scoring).
+    const live = assignment && (Array.isArray(assignment.challenge) ? assignment.challenge[0] : assignment.challenge);
+    const snap = (assignment?.challenge_snapshot ?? null) as Record<string, unknown> | null;
+    const challenge = snap?.problem_statement
+      ? {
+          problem_statement: String(snap.problem_statement),
+          instructions: (snap.instructions as string | null) ?? null,
+          constraints: (snap.constraints as string | null) ?? null,
+          evaluation_criteria: (snap.evaluation_criteria as string | null) ?? null,
+          prompt_word_limit: Number(snap.prompt_word_limit) || null,
+        }
+      : live;
     if (!challenge) throw new Error('Challenge not found for submission');
 
     const result = await evaluateSubmission({

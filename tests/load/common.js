@@ -23,8 +23,13 @@ export function cookieFrom(res) {
   return c && c.length ? `${COOKIE_NAME}=${c[0].value}` : null;
 }
 
+/** Same formula as tests/stack/seed-staging.ts — synthetic staging PINs only. */
+export function stagingPin(n) {
+  return String((n * 7919 + 104729) % 1000000).padStart(6, '0');
+}
+
 export function studentLogin(n, tags = {}) {
-  const res = http.post(`${BASE}/api/student/login`, JSON.stringify({ entryCode: String(n), accessCode: accessCode() }), { headers: { 'Content-Type': 'application/json' }, tags: { name: 'student_login', ...tags } });
+  const res = http.post(`${BASE}/api/student/login`, JSON.stringify({ entryCode: String(n), pin: stagingPin(n), accessCode: accessCode() }), { headers: { 'Content-Type': 'application/json' }, tags: { name: 'student_login', ...tags } });
   return { res, cookie: res.status === 200 ? cookieFrom(res) : null };
 }
 

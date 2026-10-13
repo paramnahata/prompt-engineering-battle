@@ -99,23 +99,13 @@ export async function DELETE(req: NextRequest) {
   if (!auth.ok) return auth.response;
   const body = await readJson(req, deleteSchema, 1024);
   if (!body.ok) return body.response;
-  const { kind: k, id } = body.data;
-  if (id === auth.session.userId) return jsonError("You can't delete the account you are signed in with.", 400);
   try {
-    const db = supabaseAdmin();
-    if (k === 'admin') {
-      const { count } = await db.from('admins').select('id', { count: 'exact', head: true }).eq('role', 'admin');
-      if ((count ?? 0) <= 1) return jsonError('At least one admin account must remain.', 409);
-    }
-    const table = k === 'judge' ? 'judges' : 'admins';
-    const { data, error } = await db.from(table).delete().eq('id', id).select('id').maybeSingle();
-    if (error) {
-      if (error.code === '23503') return jsonError('This account is referenced by audit records and cannot be deleted. Reset its password instead.', 409);
-      throw error;
-    }
-    if (!data) return jsonError('Account not found.', 404);
-    await endSessionsForSubject(id, 'account_deleted');
-    await db.from('admin_actions').insert({ admin_id: auth.session.userId, action: 'delete_account', old_value: { kind: k, id } });
+    // Locked in SQL so two admins can't delete each other and leave none.
+    const { data, error } = await supabaseAdmin().rpc('delete_organizer_account', {
+      p_admin: auth.session.userId, p_kind: body.data.kind, p_id: body.data.id,
+    });
+    if (error) throw error;
+    if (!data?.ok) return jsonError(data?.message ?? 'Could not delete the account.', data?.status ?? 409, { code: data?.code });
     return jsonOk({ ok: true });
   } catch (err) {
     return serverError('delete account', err, 'Could not delete the account.');

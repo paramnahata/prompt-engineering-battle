@@ -98,3 +98,36 @@ test('entry numbers: display and student input parsing', async () => {
   }
   for (const bad of ['', '0', '-1', '1.5', 'abc', '7 or 1=1', '123456', "1'--"]) assert.equal(parseEntryNumberInput(bad), null, bad);
 });
+
+test('team PINs: scrypt hash round-trip, wrong/malformed PINs fail, pepper matters, generator avoids weak PINs', async () => {
+  const { hashPin, verifyPin, generatePin, isPinFormat } = await import('@/lib/auth/pin');
+  const pin = generatePin();
+  assert.ok(isPinFormat(pin));
+  const stored = await hashPin(pin);
+  assert.match(stored, /^s2\$[\w-]+\$[\w-]+$/);
+  assert.ok(!stored.includes(pin), 'the PIN is not recoverable from the stored value');
+  assert.equal(await verifyPin(pin, stored), true);
+  assert.equal(await verifyPin(pin === '000001' ? '000002' : '000001', stored), false);
+  for (const bad of ['', '12345', '1234567', 'abcdef', `${pin} `]) assert.equal(await verifyPin(bad, stored), false, JSON.stringify(bad));
+  for (const corrupt of [null, '', 'x', 's1$a', 's3$a$b', 'plain-text-pin']) assert.equal(await verifyPin(pin, corrupt), false);
+  // Older s1 hashes (N=16384) still verify.
+  const crypto = await import('node:crypto');
+  const pep = crypto.createHmac('sha256', process.env.SESSION_SECRET!).update('peb:pin-pepper:v1').digest();
+  const salt = crypto.randomBytes(16);
+  const s1 = crypto.scryptSync(crypto.createHmac('sha256', pep).update(pin).digest(), salt, 32, { N: 1 << 14, r: 8, p: 1, maxmem: 64 << 20 });
+  assert.equal(await verifyPin(pin, `s1$${salt.toString('base64url')}$${s1.toString('base64url')}`), true, 's1 back-compat');
+  assert.notEqual(await hashPin(pin), stored, 'per-PIN salt');
+  process.env.PIN_PEPPER = 'a-completely-different-pepper-value-0123456789';
+  try {
+    assert.equal(await verifyPin(pin, stored), false, 'a different pepper invalidates hashes (DB leak alone is not enough)');
+  } finally {
+    delete process.env.PIN_PEPPER;
+  }
+  const seen = new Set<string>();
+  for (let i = 0; i < 2000; i++) {
+    const p = generatePin();
+    assert.ok(!['000000', '123456', '111111'].includes(p));
+    seen.add(p);
+  }
+  assert.ok(seen.size > 1990, 'PINs are random');
+});

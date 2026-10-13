@@ -4,6 +4,12 @@
  */
 import { Client } from 'pg';
 import { hashPassword } from '../../src/lib/auth/password';
+import { hashPin } from '../../src/lib/auth/pin';
+
+/** Deterministic PINs for SYNTHETIC staging entries only (load tests need to know them). */
+export function stagingPin(entryNumber: number): string {
+  return String((entryNumber * 7919 + 104729) % 1_000_000).padStart(6, '0');
+}
 
 export const STAGING_PASSWORD = 'Staging-Only-Password-1';
 
@@ -20,15 +26,16 @@ async function main() {
     ('desk@staging.local', $1, 'Staging Desk', 'volunteer')`, [hash]);
   await c.query(`insert into judges (email, password_hash, full_name) values ('judge@staging.local', $1, 'Staging Judge')`, [hash]);
   for (let i = 1; i <= 30; i++) {
-    await c.query(`insert into challenges (challenge_code, title, problem_statement, instructions, constraints, prompt_word_limit, output_char_limit, common_slot)
-      values ($1, $2, $3, 'Write the best prompt.', 'Stay under the limits.', 120, 1500, $4)`,
-      [`STG-${String(i).padStart(3, '0')}`, `Staging challenge ${i}`, `Synthetic problem statement ${i}.`, i <= 2 ? i : null]);
+    await c.query(`insert into challenges (challenge_code, title, problem_statement, instructions, constraints, prompt_word_limit, output_char_limit, common_slot, difficulty, pool_status, category)
+      values ($1, $2, $3, 'Write the best prompt.', 'Stay under the limits.', 120, 1500, $4, $5, 'approved', $6)`,
+      [`STG-${String(i).padStart(3, '0')}`, `Staging challenge ${i}`, `Synthetic problem statement ${i}.`, i <= 2 ? i : null,
+       ['easy', 'medium', 'hard', 'expert'][i % 4], ['Logic', 'Data', 'Creative', 'Coding'][i % 4]]);
   }
   await c.query('begin');
   for (let i = 1; i <= entries; i++) {
-    const { rows } = await c.query(`insert into entries (entry_code, entry_number, registration_id, team_name, is_team, present, payment_status)
-      values ($1, $2, $3, $4, $5, true, 'paid') returning id`,
-      [`ENTRY-${String(i).padStart(3, '0')}`, i, `STG-REG-${i}`, i % 3 === 0 ? null : `Team ${i}`, i % 3 !== 0]);
+    const { rows } = await c.query(`insert into entries (entry_code, entry_number, registration_id, team_name, is_team, present, payment_status, pin_hash, pin_set_at)
+      values ($1, $2, $3, $4, $5, true, 'paid', $6, now()) returning id`,
+      [`ENTRY-${String(i).padStart(3, '0')}`, i, `STG-REG-${i}`, i % 3 === 0 ? null : `Team ${i}`, i % 3 !== 0, await hashPin(stagingPin(i))]);
     await c.query(`insert into team_members (entry_id, member_position, full_name, email, phone) values ($1, 1, $2, $3, $4)`,
       [rows[0].id, `Student ${i}A`, `s${i}a@staging.local`, `90000${String(i).padStart(5, '0')}`]);
     if (i % 3 !== 0) await c.query(`insert into team_members (entry_id, member_position, full_name, email, phone) values ($1, 2, $2, $3, $4)`,
@@ -38,4 +45,4 @@ async function main() {
   await c.end();
   console.log(`seeded ${db}: ${entries} entries, 30 challenges, 4 organizer accounts`);
 }
-main().catch((e) => { console.error(e); process.exit(1); });
+if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });

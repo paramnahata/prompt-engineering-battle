@@ -40,14 +40,15 @@ export async function seed(db: Pool, opts: { entries?: number; present?: number;
   const challengeIds: string[] = [];
   for (let i = 1; i <= poolSize + 2; i++) {
     const c = await one<{ id: string }>(db,
-      `insert into challenges (challenge_code, title, problem_statement, prompt_word_limit, output_char_limit) values ($1, $2, 'Write a prompt', 20, 200) returning id`,
-      [`T-${String(i).padStart(3, '0')}`, `Challenge ${i}`]);
+      `insert into challenges (challenge_code, title, problem_statement, prompt_word_limit, output_char_limit, difficulty, pool_status, category)
+       values ($1, $2, 'Write a prompt', 20, 200, 'medium', 'approved', $3) returning id`,
+      [`T-${String(i).padStart(3, '0')}`, `Challenge ${i}`, `Cat ${i % 3}`]);
     challengeIds.push(c.id);
   }
   const entryIds: string[] = [];
   for (let i = 1; i <= entries; i++) {
     const e = await one<{ id: string }>(db,
-      `insert into entries (entry_code, entry_number, registration_id, team_name, present) values ($1, $2, $3, $4, $5) returning id`,
+      `insert into entries (entry_code, entry_number, registration_id, team_name, present, pin_hash) values ($1, $2, $3, $4, $5, 'test-hash') returning id`,
       [`ENTRY-${String(i).padStart(3, '0')}`, i, `REG-${i}`, `Team ${i}`, i <= present]);
     await db.query(`insert into team_members (entry_id, member_position, full_name, email) values ($1, 1, $2, $3)`, [e.id, `Member ${i}`, `m${i}@test.local`]);
     entryIds.push(e.id);

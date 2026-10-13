@@ -51,3 +51,8 @@ export function signToken(secret: string, claims: Record<string, unknown>) {
 }
 
 export const COOKIE = '__Host-peb_session';
+
+/** Same formula as tests/stack/seed-staging.ts — synthetic staging PINs only. */
+export function stagingPin(n: number): string {
+  return String((n * 7919 + 104729) % 1_000_000).padStart(6, '0');
+}

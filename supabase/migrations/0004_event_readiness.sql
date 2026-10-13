@@ -51,6 +51,8 @@ create or replace function entries_fill_entry_number() returns trigger
 language plpgsql set search_path = public as $$
 begin
   if new.entry_number is null then
+    -- Serialise fallback allocation so concurrent inserts can't pick the same number.
+    perform pg_advisory_xact_lock(hashtext('entries_entry_number'));
     new.entry_number := nullif(regexp_replace(coalesce(new.entry_code, ''), '\D', '', 'g'), '')::integer;
     if new.entry_number is null or exists (select 1 from entries where entry_number = new.entry_number) then
       select coalesce(max(entry_number), 0) + 1 into new.entry_number from entries;
@@ -63,7 +65,7 @@ create trigger trg_entries_fill_entry_number before insert on entries
   for each row execute function entries_fill_entry_number();
 
 -- ---------------------------------------------------------------------
--- Team members: per-member details, up to 4 members per entry
+-- Team members: per-member details (official team size: 1-2 members)
 -- ---------------------------------------------------------------------
 alter table team_members add column if not exists gender text;
 alter table team_members add column if not exists college text;
@@ -74,7 +76,7 @@ alter table team_members add column if not exists source_row integer;
 
 alter table team_members drop constraint if exists team_members_member_position_check;
 do $$ begin
-  alter table team_members add constraint team_members_member_position_check check (member_position between 1 and 4);
+  alter table team_members add constraint team_members_member_position_check check (member_position in (1, 2));
 exception when duplicate_object then null; end $$;
 
 -- ---------------------------------------------------------------------
@@ -809,7 +811,7 @@ create or replace function import_participants(p_entries jsonb, p_admin uuid)
 returns jsonb language plpgsql set search_path = public as $$
 declare rec jsonb; v_max integer; v_first integer; v_imported integer := 0; v_skipped integer := 0; v_entry uuid; v_members integer;
 begin
-  perform pg_advisory_xact_lock(hashtext('import_participants'));
+  perform pg_advisory_xact_lock(hashtext('entries_entry_number'));
   select coalesce(max(entry_number), 0) into v_max from entries;
 
   for rec in select value from jsonb_array_elements(p_entries) loop

@@ -1,8 +1,10 @@
+import crypto from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireApiRole } from '@/lib/auth/session';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { jsonError, jsonOk, readJson, serverError } from '@/lib/http';
+import { entryPayloadSchema } from '@/lib/participants';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +21,7 @@ export async function GET() {
   try {
     const { data, error } = await supabaseAdmin()
       .from('entries')
-      .select(`id, entry_number, registration_id, team_name, is_team, present, present_at, disqualified, team_members(${MEMBER_COLUMNS})`)
+      .select(`id, entry_number, registration_id, team_name, is_team, present, present_at, disqualified, disqualified_reason, pin_set_at, team_members(${MEMBER_COLUMNS})`)
       .order('entry_number', { ascending: true })
       .limit(2000);
     if (error) throw error;
@@ -29,32 +31,46 @@ export async function GET() {
   }
 }
 
-const deleteSchema = z.object({ confirm: z.literal('DELETE ALL PARTICIPANTS') });
+/** Manual registration (admin). Uses the same atomic import function as the CSV path. */
+export async function POST(req: NextRequest) {
+  const auth = await requireApiRole(['admin']);
+  if (!auth.ok) return auth.response;
+  const body = await readJson(req, entryPayloadSchema, 8 * 1024);
+  if (!body.ok) return body.response;
+  try {
+    const payload = [{
+      registration_id: `MANUAL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+      team_name: body.data.team_name ?? '',
+      members: body.data.members.map((m, i) => ({
+        position: i + 1, full_name: m.full_name, email: (m.email ?? '').toLowerCase(), phone: (m.phone ?? '').replace(/[^\d+]/g, ''),
+        gender: m.gender ?? '', college: m.college ?? '', city: m.city ?? '', branch: m.branch ?? '', study_year: m.study_year ?? '', source_row: null,
+      })),
+    }];
+    const { data, error } = await supabaseAdmin().rpc('import_participants', { p_entries: payload, p_admin: auth.session.userId });
+    if (error) throw error;
+    return jsonOk({ ok: true, entryNumber: data?.firstEntryNumber });
+  } catch (err) {
+    return serverError('create entry', err, 'Could not create the entry.');
+  }
+}
+
+const deleteSchema = z.object({ confirm: z.string().max(40) });
 
 /**
- * Removes every participant so a corrected sheet can be imported. Refused
- * once Round 1 has assignments — competition data must be reset first
- * (Start Over), so this can never silently erase submissions.
+ * Removes every participant so a corrected sheet can be imported. The SQL
+ * function locks the rounds first, so it can't race a round start, and it
+ * refuses once any competition data exists.
  */
 export async function DELETE(req: NextRequest) {
   const auth = await requireApiRole(['admin']);
   if (!auth.ok) return auth.response;
   const body = await readJson(req, deleteSchema, 1024);
-  if (!body.ok) return jsonError('Type DELETE ALL PARTICIPANTS to confirm.', 400);
+  if (!body.ok) return body.response;
   try {
-    const db = supabaseAdmin();
-    const [{ count: assignments, error: aErr }, { data: round, error: rErr }] = await Promise.all([
-      db.from('challenge_assignments').select('id', { count: 'exact', head: true }),
-      db.from('rounds').select('status').eq('round_number', 1).maybeSingle(),
-    ]);
-    if (aErr || rErr) throw aErr ?? rErr;
-    if ((assignments ?? 0) > 0 || (round && round.status !== 'not_started')) {
-      return jsonError('Round 1 has data. Use Start Over on the dashboard first; participants can only be cleared before the competition starts.', 409);
-    }
-    const { error, count } = await db.from('entries').delete({ count: 'exact' }).not('id', 'is', null);
+    const { data, error } = await supabaseAdmin().rpc('clear_participants', { p_admin: auth.session.userId, p_confirm: body.data.confirm });
     if (error) throw error;
-    await db.from('admin_actions').insert({ admin_id: auth.session.userId, action: 'reset_participants', old_value: { deleted_count: count } });
-    return jsonOk({ ok: true, deleted: count ?? 0 });
+    if (!data?.ok) return jsonError(data?.message ?? 'Not allowed.', data?.status ?? 409, { code: data?.code });
+    return jsonOk({ ok: true, deleted: data.deleted });
   } catch (err) {
     return serverError('participants reset', err, 'Could not clear participants.');
   }
