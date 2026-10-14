@@ -60,20 +60,6 @@ test('tokens signed with another secret are rejected', async () => {
   }
 });
 
-test('access code: current window valid, previous only within grace, malformed rejected', async () => {
-  const { getCurrentAccessCode, isAccessCodeValid, ROTATE_SECONDS, GRACE_SECONDS } = await import('@/lib/security/access-code');
-  const windowStart = Math.floor(Date.now() / (ROTATE_SECONDS * 1000)) * ROTATE_SECONDS * 1000;
-  const prev = getCurrentAccessCode(windowStart - 1000).code;
-  const cur = getCurrentAccessCode(windowStart + 1000).code;
-  assert.ok(isAccessCodeValid(cur, windowStart + 1000));
-  assert.ok(isAccessCodeValid(` ${cur} `, windowStart + 1000));
-  if (prev !== cur) {
-    assert.ok(isAccessCodeValid(prev, windowStart + (GRACE_SECONDS - 1) * 1000), 'grace period');
-    assert.ok(!isAccessCodeValid(prev, windowStart + (GRACE_SECONDS + 1) * 1000), 'expired after grace');
-  }
-  for (const bad of ['', '123', '12345', 'abcd', '12a4']) assert.ok(!isAccessCodeValid(bad), bad);
-});
-
 test('safeNextPath blocks open redirects', async () => {
   const { safeNextPath } = await import('@/lib/http');
   const fb = '/organizer/hub';

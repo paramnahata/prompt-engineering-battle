@@ -5,8 +5,9 @@ import { jsonOk, serverError } from '@/lib/http';
 export const dynamic = 'force-dynamic';
 
 /**
- * Projector screen data: round state + counts only. Names appear only for the
- * winners, and only once the final results have been published.
+ * Projector screen data: round state, timer, public announcements and — only
+ * once the final results are published — the winners. No registration or
+ * submission counts, no access codes, no other team data.
  */
 export async function GET() {
   const auth = await requireApiRole(ORGANIZER_ROLES);
@@ -14,13 +15,12 @@ export async function GET() {
   try {
     const db = supabaseAdmin();
     await db.rpc('round1_tick');
-    const [registered, present, submitted, round, announcements, pub] = await Promise.all([
-      db.from('entries').select('id', { count: 'exact', head: true }),
-      db.from('entries').select('id', { count: 'exact', head: true }).eq('present', true),
-      db.from('submissions').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),
-      db.from('rounds').select('round_number, status, round_end_at, paused_at').order('round_number'),
+    await db.rpc('round2_tick');
+    const [round, announcements, pub, twist] = await Promise.all([
+      db.from('rounds').select('round_number, status, round_start_at, round_end_at, paused_at, total_paused_seconds').order('round_number'),
       db.from('announcements').select('id, title, message').eq('active', true).eq('audience', 'all').order('created_at', { ascending: false }).limit(3),
       db.from('event_settings').select('value').eq('key', 'results_publication').maybeSingle(),
+      db.from('round2_states').select('entry_id', { count: 'exact', head: true }).not('twist_revealed_at', 'is', null),
     ]);
     const finalPub = ((pub.data?.value ?? {}) as { final?: { published?: boolean; showScore?: boolean } }).final;
     let winners: { rank: number; entryNumber: number | null; teamName: string | null; members: string[]; score: number | null }[] = [];
@@ -36,12 +36,10 @@ export async function GET() {
       });
     }
     return jsonOk({
-      registered: registered.count ?? 0,
-      present: present.count ?? 0,
-      submitted: submitted.count ?? 0,
       round: (round.data ?? []).find((r) => r.round_number === 1) ?? null,
       round2: (round.data ?? []).find((r) => r.round_number === 2) ?? null,
       announcements: announcements.data ?? [],
+      twistRevealed: (twist.count ?? 0) > 0,
       winners,
       serverNow: new Date().toISOString(),
     });

@@ -8,7 +8,7 @@ import { isSchemaMissingError } from '@/lib/db-errors';
  * function/table this version of the app needs. Cached briefly so a public
  * health check can't be used to hammer the database.
  */
-export const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_SECRET_KEY', 'SESSION_SECRET', 'EVENT_SECRET'] as const;
+export const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_SECRET_KEY', 'SESSION_SECRET'] as const;
 export const RECOMMENDED_ENV = ['PIN_PEPPER'] as const;
 export const EXPECTED_SCHEMA_VERSION = 7;
 

@@ -47,9 +47,8 @@ test('guessed PINs: wrong PIN = same answer as unknown entry; 6 failures lock th
   const other = new Actor('other team');
   const ok = await other.req('POST', '/api/student/login', { entryCode: '151', pin: stagingPin(151), accessCode: code() });
   assert.equal(ok.status, 200, 'other entries unaffected');
-  const wrongCode = await new Actor('x').req('POST', '/api/student/login', { entryCode: '152', pin: stagingPin(152), accessCode: code() === '0000' ? '0001' : '0000' });
-  assert.equal(wrongCode.status, 401);
-  assert.match(String(wrongCode.json.error), /access code/i);
+  const noCode = await new Actor('x').req('POST', '/api/student/login', { entryCode: '152', pin: stagingPin(152) });
+  assert.equal(noCode.status, 200, 'entry number + PIN is enough (no room code)');
 });
 
 test('re-issuing a PIN signs the team out everywhere and the old PIN stops working', async () => {

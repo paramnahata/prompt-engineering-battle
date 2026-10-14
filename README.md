@@ -89,7 +89,7 @@ anything is written; re-importing the same file is a no-op.
 
 ## Security notes
 
-- Gemini key, Supabase service-role key, `SESSION_SECRET`, `EVENT_SECRET`
+- Gemini key, Supabase service-role key, `SESSION_SECRET`, `PIN_PEPPER`
   are server-only. Confirm none of them ever get a `NEXT_PUBLIC_` prefix.
 - All privileged mutation happens through route handlers using
   `requireRole()` + explicit ownership checks — the browser's Supabase

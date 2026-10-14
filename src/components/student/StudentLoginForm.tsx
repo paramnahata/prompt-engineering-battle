@@ -11,7 +11,6 @@ const digits = (v: string, n: number) => v.replace(/\D/g, '').slice(0, n);
 export default function StudentLoginForm({ organizerSignedIn, setupIssue }: { organizerSignedIn: boolean; setupIssue?: string | null }) {
   const [entryNumber, setEntryNumber] = useState('');
   const [pin, setPin] = useState('');
-  const [accessCode, setAccessCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -23,12 +22,11 @@ export default function StudentLoginForm({ organizerSignedIn, setupIssue }: { or
     try {
       const res = await fetch('/api/student/login', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
-        body: JSON.stringify({ entryCode: entryNumber.trim(), pin: pin.trim(), accessCode: accessCode.trim() }),
+        body: JSON.stringify({ entryCode: entryNumber.trim(), pin: pin.trim() }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(body.error ?? 'Sign-in failed. Check your details and try again.');
-        if (body.code === 'bad_access_code') setAccessCode('');
         setLoading(false);
         return;
       }
@@ -44,11 +42,10 @@ export default function StudentLoginForm({ organizerSignedIn, setupIssue }: { or
     <AuthFrame aside={
       <div>
         <h1 className="font-display text-[3.4rem] font-semibold leading-[1.02] text-white" style={{ fontVariationSettings: "'wdth' 84" }}>Write the prompt that wins.</h1>
-        <p className="mt-5 max-w-md text-lg leading-8 text-slate-300">Four timed challenges. One shot at the final. Sign in with the details from your PIN slip and the code on the big screen.</p>
+        <p className="mt-5 max-w-md text-lg leading-8 text-slate-300">Four timed challenges. One shot at the final. Sign in with the two details on your PIN slip.</p>
         <ul className="mt-8 space-y-3 text-slate-300">
           <li className="flex gap-3"><span className="font-display text-xl font-semibold text-violet-300">1</span><span><span className="text-white">Entry number</span> — printed on your PIN slip.</span></li>
           <li className="flex gap-3"><span className="font-display text-xl font-semibold text-violet-300">2</span><span><span className="text-white">Team PIN</span> — six digits, also on your slip. Keep it private.</span></li>
-          <li className="flex gap-3"><span className="font-display text-xl font-semibold text-violet-300">3</span><span><span className="text-white">Room code</span> — four digits on the projector. It changes every two minutes.</span></li>
         </ul>
       </div>
     }>
@@ -68,14 +65,8 @@ export default function StudentLoginForm({ organizerSignedIn, setupIssue }: { or
             value={pin} onChange={(e) => setPin(digits(e.target.value, 6))} required aria-describedby="pin-help" />
           <p id="pin-help" className="peb-help">Lost it? The registration desk can issue a new PIN.</p>
         </div>
-        <div>
-          <label htmlFor="accessCode" className="peb-label">Room code</label>
-          <input id="accessCode" className={`${input} tracking-[0.35em] placeholder:tracking-normal`} placeholder="4 digits" inputMode="numeric" maxLength={4} autoComplete="off"
-            value={accessCode} onChange={(e) => setAccessCode(digits(e.target.value, 4))} required aria-describedby="code-help" />
-          <p id="code-help" className="peb-help">Shown on the projector screen in the hall.</p>
-        </div>
         {error && <Alert tone="error">{error}</Alert>}
-        <Button type="submit" variant="primary" className="w-full" loading={loading} disabled={!entryNumber || pin.length !== 6 || accessCode.length !== 4}>
+        <Button type="submit" variant="primary" className="w-full" loading={loading} disabled={!entryNumber || pin.length !== 6}>
           {loading ? 'Checking…' : <>Sign in <ArrowRight className="h-4 w-4" aria-hidden="true" /></>}
         </Button>
       </form>
