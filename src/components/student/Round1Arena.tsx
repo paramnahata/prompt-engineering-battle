@@ -5,7 +5,9 @@ import { useServerCountdown } from '@/hooks/useServerCountdown';
 import { useHeartbeat } from '@/hooks/useHeartbeat';
 import { usePolling } from '@/hooks/usePolling';
 import { formatMMSS } from '@/lib/timer';
-import LogoutButton from '@/components/auth/LogoutButton';
+import { Lock, Check, Pause, AlertTriangle, Target } from 'lucide-react';
+import StudentShell, { StudentCenter } from './StudentShell';
+import { cn } from '@/components/ui/cn';
 
 interface AssignmentVM {
   id: string;
@@ -364,28 +366,28 @@ export default function Round1Arena({ entryNumber }: { entryNumber: number | nul
 
   if (paused) {
     return (
-      <CenteredCard icon="Ⅱ" title="Round paused" entryNumber={entryNumber}>
-        The organizer paused Round 1. Your timer is frozen and your work is saved. This screen continues automatically when the round resumes.
-      </CenteredCard>
+      <StudentCenter entryNumber={entryNumber} icon={<Pause className="h-6 w-6" />} title="Round paused">
+        The organizer paused Round 1. Your timer is frozen and your work is saved. This screen continues on its own when the round resumes.
+      </StudentCenter>
     );
   }
 
   if (!current || !assignment) {
     return (
-      <CenteredCard icon={loading ? '…' : loadError ? '!' : '✓'} title={loading ? 'Preparing your arena' : loadError ? 'Challenge unavailable' : 'Round completed'} entryNumber={entryNumber}>
-        <span>{loading ? 'Syncing your assigned challenges and saved work…' : loadError ?? 'Your submissions are complete. Redirecting…'}</span>
-        {loadError && (
-          <button className="peb-btn-primary mt-6 w-full" onClick={() => { setLoading(true); void fetchState().catch(() => {}); }}>
-            Retry
-          </button>
-        )}
-      </CenteredCard>
+      <StudentCenter entryNumber={entryNumber} icon={loadError ? <AlertTriangle className="h-6 w-6" /> : <Check className="h-6 w-6" />}
+        title={loading ? 'Preparing your challenges…' : loadError ? 'Challenge unavailable' : 'Round complete'}
+        action={loadError ? <button className="peb-btn-primary w-full" onClick={() => { setLoading(true); void fetchState().catch(() => {}); }}>Try again</button> : undefined}>
+        {loading ? 'Loading your assigned challenges and saved work.' : loadError ?? 'Your answers are submitted. Taking you to your confirmation…'}
+      </StudentCenter>
     );
   }
 
   const isLast = assignment.position === 4;
   const timeUp = secondsLeft === 0;
   const lowTime = secondsLeft !== null && secondsLeft <= 30;
+  const totalSeconds = current.question_start_at && current.question_end_at
+    ? Math.max(1, (new Date(current.question_end_at).getTime() - new Date(current.question_start_at).getTime()) / 1000) : null;
+  const elapsedPct = totalSeconds && secondsLeft !== null ? Math.min(100, Math.max(0, 100 - (secondsLeft / totalSeconds) * 100)) : 0;
   const saveLabel: Record<SaveState, string> = {
     idle: '',
     unsaved: 'Unsaved changes…',
@@ -395,118 +397,112 @@ export default function Round1Arena({ entryNumber }: { entryNumber: number | nul
     limit: 'Not saved — over the limit',
     closed: 'This challenge is closed',
   };
+  const titles = new Map(state?.assignments.map((a) => [a.position, a.challenge.title]) ?? []);
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-white/10 bg-slate-950/90 px-4 py-3 backdrop-blur-xl sm:px-8">
-        <div className="min-w-0">
-          <div className="truncate text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-300">Live Arena{entryNumber !== null ? ` · Entry ${entryNumber}` : ''}</div>
-          <div className="mt-1 text-lg font-bold sm:text-xl">Challenge {assignment.position} <span className="font-normal text-slate-500">/ 4</span></div>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="text-right" aria-live="off">
-            <div className={`font-mono text-2xl tabular-nums sm:text-3xl ${lowTime ? 'animate-pulse-glow text-red-400' : ''}`} role="timer" aria-label="Time left for this challenge">
-              {secondsLeft !== null ? formatMMSS(secondsLeft) : '--:--'}
-            </div>
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">this challenge</div>
+    <StudentShell entryNumber={entryNumber} wide
+      right={
+        <div className="text-right" aria-live="off">
+          <div className={cn('font-display text-3xl font-semibold leading-none tabular sm:text-4xl', lowTime ? 'animate-pulse-glow text-rose-300' : 'text-white')} role="timer" aria-label="Time left for this challenge">
+            {secondsLeft !== null ? formatMMSS(secondsLeft) : '--:--'}
           </div>
-          <LogoutButton redirectTo="/student/login" />
+          <div className="text-xs text-muted">left on this challenge</div>
         </div>
-      </header>
+      }
+      below={<div className="h-1 bg-slate-800" aria-hidden="true"><div className={cn('h-full transition-[width] duration-1000 ease-linear', lowTime ? 'bg-rose-400' : 'bg-peb-gradient')} style={{ width: `${elapsedPct}%` }} /></div>}>
+      <ol className="mb-5 grid grid-cols-4 gap-2" aria-label={`Challenge ${assignment.position} of 4`}>
+        {[1, 2, 3, 4].map((p) => {
+          const done = p < assignment.position;
+          const active = p === assignment.position;
+          return (
+            <li key={p} aria-current={active ? 'step' : undefined}
+              className={cn('flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-xs sm:text-sm',
+                active ? 'border-violet-400/50 bg-violet-500/10 text-white' : done ? 'border-line bg-surface/60 text-slate-400' : 'border-line/60 text-faint')}>
+              <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold', active ? 'bg-peb-gradient text-white' : done ? 'bg-emerald-500/20 text-emerald-200' : 'bg-slate-800 text-slate-500')}>
+                {done ? <Check className="h-3 w-3" aria-label="submitted" /> : p}
+              </span>
+              <span className="hidden truncate sm:inline">{active || done ? titles.get(p) ?? `Challenge ${p}` : p <= 2 ? 'Common challenge' : 'Your challenge'}</span>
+              {!active && !done && <Lock className="ml-auto hidden h-3 w-3 shrink-0 sm:block" aria-label="locked" />}
+            </li>
+          );
+        })}
+      </ol>
 
-      <div className="mx-auto max-w-7xl px-4 pt-4 sm:px-8">
-        <div className="flex gap-1.5" aria-label={`Challenge ${assignment.position} of 4`}>
-          {[1, 2, 3, 4].map((p) => (
-            <div key={p} className={`h-1.5 flex-1 rounded-full ${p < assignment.position ? 'bg-cyan-300/70' : p === assignment.position ? 'bg-gradient-to-r from-violet-500 to-cyan-300' : 'bg-white/10'}`} />
-          ))}
-        </div>
-      </div>
-
-      <main className="mx-auto grid max-w-7xl grid-cols-1 gap-5 p-4 sm:p-8 lg:grid-cols-2 lg:gap-6">
-        <section className="peb-card" aria-labelledby="challenge-title">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300">Challenge brief</p>
-          <h2 id="challenge-title" className="mt-2 text-xl font-bold tracking-tight">{assignment.challenge.title}</h2>
-          <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-300">{assignment.challenge.problem_statement}</p>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+        <section className="peb-panel self-start p-5 lg:sticky lg:top-24" aria-labelledby="challenge-title">
+          <div className="text-sm text-muted">Challenge {assignment.position} of 4</div>
+          <h1 id="challenge-title" className="mt-1 text-2xl font-semibold text-white">{assignment.challenge.title}</h1>
+          <p className="mt-3 whitespace-pre-wrap leading-7 text-slate-200">{assignment.challenge.problem_statement}</p>
           {assignment.challenge.instructions && (
-            <>
-              <h3 className="mb-1 mt-4 text-sm font-semibold">Instructions</h3>
-              <p className="whitespace-pre-wrap text-sm leading-6 text-muted">{assignment.challenge.instructions}</p>
-            </>
+            <div className="mt-5"><h2 className="text-sm font-semibold text-white">Instructions</h2><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-300">{assignment.challenge.instructions}</p></div>
           )}
           {assignment.challenge.constraints && (
-            <>
-              <h3 className="mb-1 mt-4 text-sm font-semibold">Constraints</h3>
-              <p className="whitespace-pre-wrap text-sm leading-6 text-muted">{assignment.challenge.constraints}</p>
-            </>
+            <div className="mt-5"><h2 className="text-sm font-semibold text-white">Constraints</h2><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-300">{assignment.challenge.constraints}</p></div>
           )}
-          <div className="mt-4 space-y-1 border-t border-border pt-3 text-xs text-muted">
-            <div>Prompt limit: <span className="text-foreground">{wordLimit} words</span></div>
-            <div>AI output limit: <span className="text-foreground">{charLimit} characters</span></div>
-          </div>
+          {assignment.challenge.expected_output && (
+            <div className="mt-5 rounded-xl border border-cyan-400/20 bg-cyan-500/[0.06] p-4">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-cyan-100"><Target className="h-4 w-4" aria-hidden="true" />What a good output looks like</h2>
+              <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-slate-200">{assignment.challenge.expected_output}</p>
+            </div>
+          )}
+          <dl className="mt-5 grid grid-cols-2 gap-3 border-t border-line/70 pt-4 text-sm">
+            <div><dt className="text-muted">Prompt limit</dt><dd className="font-semibold text-white">{wordLimit} words</dd></div>
+            <div><dt className="text-muted">AI output limit</dt><dd className="font-semibold text-white">{charLimit} characters</dd></div>
+          </dl>
         </section>
 
         <section className="flex flex-col gap-4">
-          <div className="peb-card">
-            <div className="mb-1 flex items-center justify-between">
-              <label htmlFor="prompt-input" className="text-sm font-medium">Your prompt</label>
-              <span className={`text-xs tabular-nums ${overWordLimit ? 'font-semibold text-red-400' : 'text-muted'}`}>{promptWords} / {wordLimit} words</span>
+          <div className="peb-panel p-4 sm:p-5">
+            <div className="mb-2 flex items-center justify-between">
+              <label htmlFor="prompt-input" className="font-medium text-white">Your prompt</label>
+              <span className={cn('text-xs tabular', overWordLimit ? 'font-semibold text-rose-300' : 'text-muted')}>{promptWords} / {wordLimit} words</span>
             </div>
             <textarea
               id="prompt-input"
-              className={`mt-2 h-44 w-full resize-y rounded-xl border bg-slate-950/70 p-4 text-sm leading-6 focus:outline-none focus:ring-1 ${overWordLimit ? 'border-red-500 focus:ring-red-500' : 'border-border focus:ring-accent'}`}
+              className={cn('h-52 w-full resize-y rounded-xl border bg-background/80 p-4 leading-7 text-slate-100 placeholder:text-faint focus:outline-none focus:ring-2',
+                overWordLimit ? 'border-rose-500/70 focus:ring-rose-500/30' : 'border-line focus:border-violet-400/60 focus:ring-violet-500/20')}
               value={draftPrompt}
               onChange={(e) => setDraftPrompt(e.target.value)}
               onPaste={blockPaste}
               onCopy={blockCopy}
               onCut={blockCopy}
               onDrop={(e) => e.preventDefault()}
-              placeholder="Type the prompt you gave the AI tool…"
+              placeholder="Write the prompt you gave the AI tool. Typing only — pasting is disabled."
+              aria-describedby="prompt-help"
               disabled={timeUp && advancing}
             />
-            {overWordLimit && <p className="mt-1 text-xs text-red-400">{promptWords - wordLimit} word{promptWords - wordLimit === 1 ? '' : 's'} over the limit — trim it, or the last saved version will be submitted.</p>}
+            <p id="prompt-help" className={cn('mt-1.5 text-xs', overWordLimit ? 'text-rose-300' : 'text-faint')}>
+              {overWordLimit ? `${promptWords - wordLimit} word${promptWords - wordLimit === 1 ? '' : 's'} over the limit — trim it, or the last saved version is submitted.` : 'Saved automatically as you type.'}
+            </p>
           </div>
-          <div className="peb-card">
-            <div className="mb-1 flex items-center justify-between">
-              <label htmlFor="output-input" className="text-sm font-medium">AI output</label>
-              <span className="text-xs tabular-nums text-muted">{draftOutput.length} / {charLimit} chars</span>
+          <div className="peb-panel p-4 sm:p-5">
+            <div className="mb-2 flex items-center justify-between">
+              <label htmlFor="output-input" className="font-medium text-white">AI output</label>
+              <span className="text-xs tabular text-muted">{draftOutput.length} / {charLimit} characters</span>
             </div>
             <textarea
               id="output-input"
-              className="h-40 w-full resize-y rounded-lg border border-border bg-surface p-3 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+              className="h-44 w-full resize-y rounded-xl border border-line bg-background/80 p-4 text-sm leading-6 text-slate-100 placeholder:text-faint focus:border-violet-400/60 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
               value={draftOutput}
               onChange={(e) => setDraftOutput(e.target.value.slice(0, charLimit))}
               maxLength={charLimit}
-              placeholder="Paste the AI's output here…"
+              placeholder="Paste or type the response the AI gave you."
               disabled={timeUp && advancing}
             />
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className={`text-xs ${saveState === 'retrying' || saveState === 'limit' ? 'text-amber-300' : 'text-muted'}`} role="status" aria-live="polite">{saveLabel[saveState]}</span>
-            <button className="peb-btn-primary" onClick={() => void advance()} disabled={!timeUp || advancing || overWordLimit}>
-              {advancing ? 'Submitting…' : !timeUp && secondsLeft !== null ? `Next opens in ${formatMMSS(secondsLeft)}` : isLast ? 'Final submit' : 'Save & next'}
+            <span className={cn('flex items-center gap-2 text-sm', saveState === 'retrying' || saveState === 'limit' ? 'text-amber-200' : saveState === 'saved' ? 'text-emerald-200' : 'text-muted')} role="status" aria-live="polite">
+              <span className={cn('h-2 w-2 rounded-full', saveState === 'saved' ? 'bg-emerald-400' : saveState === 'retrying' || saveState === 'limit' ? 'bg-amber-400' : 'bg-slate-500')} aria-hidden="true" />
+              {saveLabel[saveState]}
+            </span>
+            <button className="peb-btn-primary min-w-44" onClick={() => void advance()} disabled={!timeUp || advancing || overWordLimit}>
+              {advancing ? 'Submitting…' : !timeUp && secondsLeft !== null ? `Next opens in ${formatMMSS(secondsLeft)}` : isLast ? 'Submit final answer' : 'Submit and continue'}
             </button>
           </div>
-          {notice && <p className="rounded-lg border border-amber-300/20 bg-amber-400/10 p-2 text-xs text-amber-100" role="status">{notice}</p>}
-          <p className="text-right text-xs text-muted">When the timer ends your answer is submitted automatically and the next challenge opens. You can&apos;t return to a previous challenge.</p>
+          {notice && <p className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-50" role="status">{notice}</p>}
+          <p className="text-sm text-muted">When the timer ends, your answer is submitted automatically and the next challenge opens. Submitted challenges can&apos;t be reopened.</p>
         </section>
-      </main>
-
-      {entryNumber !== null && (
-        <div className="pointer-events-none fixed bottom-3 right-3 select-none text-xs text-muted/50" aria-hidden="true">Entry {entryNumber}</div>
-      )}
-    </div>
-  );
-}
-
-function CenteredCard({ icon, title, entryNumber, children }: { icon: string; title: string; entryNumber: number | null; children: React.ReactNode }) {
-  return (
-    <main className="flex min-h-screen items-center justify-center p-6">
-      <section className="w-full max-w-lg rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center shadow-2xl shadow-violet-950/30">
-        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/15 text-2xl text-violet-200" aria-hidden="true">{icon}</div>
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Prompt Engineering Battle{entryNumber !== null ? ` · Entry ${entryNumber}` : ''}</p>
-        <h1 className="mt-3 text-2xl font-bold">{title}</h1>
-        <div className="mt-3 text-sm leading-6 text-slate-400" aria-live="polite">{children}</div>
-      </section>
-    </main>
+      </div>
+    </StudentShell>
   );
 }

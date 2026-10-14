@@ -4,6 +4,7 @@ import { requireApiRole } from '@/lib/auth/session';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { MAX_CSV_BYTES, parseParticipantsCsv, type FieldKey } from '@/lib/csv/import';
 import { jsonError, jsonOk, readJson, serverError } from '@/lib/http';
+import { limitAction } from '@/lib/ops/rate-limit';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -28,6 +29,12 @@ export async function POST(req: NextRequest) {
   if (!auth.ok) return auth.response;
   const body = await readJson(req, bodySchema, MAX_CSV_BYTES + 64 * 1024);
   if (!body.ok) return body.response;
+  try {
+    const limited = await limitAction(`participant-import:${auth.session.userId}`, 30, 300);
+    if (limited) return limited;
+  } catch (err) {
+    return serverError('participant-import rate limit', err);
+  }
 
   const preview = parseParticipantsCsv(body.data.csvText, body.data.mapping ?? {});
   if (preview.fileErrors.length) return jsonError(preview.fileErrors.join(' '), 422, { headers: preview.headers, mapping: preview.mapping });

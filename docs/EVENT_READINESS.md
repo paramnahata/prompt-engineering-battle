@@ -4,9 +4,10 @@ Branch `hardening/event-readiness` (PR #4), based on `main` @ `0e37ab2` (product
 
 Everything below was verified by running code; the commands and outputs are in §8. Anything that was **not** verified is marked as such.
 
-**Nothing has been applied to production.** Migrations 0003, 0004 and 0005 are unapplied. `main` is unchanged. No live setting or production data was modified. Production was only read, for schema compatibility checks in phase 1.
+**Nothing has been applied to production.** Migrations 0003, 0004, 0005 and 0006 are unapplied. `main` is unchanged. No live setting or production data was modified. Production was only read (schema checks).
 
 Contents:
+0. Phase 3: complete platform (login 500 root cause, Round 2, results, redesigned UI, how to test)
 1. Audit findings (phase 1)
 2. Feature summary (phases 1 + 2)
 3. Competition rules as implemented
@@ -18,6 +19,47 @@ Contents:
 9. Staging migration, production deployment and rollback
 10. Known risks and limitations
 11. Decisions and data still needed
+
+---
+
+## 0. Phase 3: complete platform
+
+### 0.1 The `/api/organizer/login` HTTP 500 on the Vercel preview — root cause and fix
+- **Root cause (verified).** Vercel *Preview* uses the same `SUPABASE_URL` / `SUPABASE_SECRET_KEY` as Production (checked in the Vercel project settings). The production database has none of migrations 0003–0006 (checked read-only: `rate_limit_hit` does not exist, `auth_sessions` does not exist; 11 migrations applied, the newest from 2026-10-08). The branch's login code calls `rate_limit_hit` and writes `auth_sessions`, PostgREST answers `PGRST202 Could not find the function public.rate_limit_hit…`, and the route turned that into a generic 500.
+- **Reproduced locally.** A database with only 0001–0003 (production shape) behind PostgREST gives exactly that `PGRST202` for the same call.
+- **What was fixed in code.**
+  - Any "database is behind the code" error (`PGRST202/204/205`, `42P01`, `42883`, `42703`) now returns **HTTP 503 `setup_required`** with a clear message instead of a 500, on every route (`serverError` in `src/lib/http.ts`). The server log names the missing object; secrets are never logged.
+  - New **`GET /api/health`**: public callers get `{ok, database, schemaVersion}`; a signed-in admin also gets the missing functions/tables and the *names* of missing environment variables. Backed by the new `app_schema_status()` SQL function.
+  - Both sign-in pages show a banner ("This deployment's database is missing required migrations…") instead of letting people type credentials into a broken form.
+  - Verified: against the production-shaped database the login returns 503 + banner; against the migrated database the same request returns 200.
+- **What still has to happen (blocker, needs your approval):** apply migrations `0003 → 0004 → 0005 → 0006` to the Supabase project the deployment uses. Until then *no* login can work on the preview, because the session and rate-limit tables don't exist there. There is no free, separate staging database available (both free Supabase project slots are in use), so the preview can only be tested after the production database is migrated — see §9.3.
+
+### 0.2 CSP errors on the preview
+Vercel injects its feedback toolbar (`vercel.live`) into **preview** deployments; our strict CSP blocked it, producing console errors. `next.config.mjs` now allows exactly the origins Vercel documents for the toolbar (`vercel.live`, `vercel.com`, `assets.vercel.com`, `wss://ws-us3.pusher.com`) **only when `VERCEL_ENV=preview`**. Production keeps the strict policy. Fonts are self-hosted (no third-party requests). A browser walk-through of 30+ screens on the local production build showed no CSP violations (the preview-only toolbar allowance itself could not be exercised outside Vercel).
+
+### 0.3 New features
+| Area | What exists now |
+|---|---|
+| **Round 2 (organizer-configured)** | Nothing is invented: Round 2 cannot start until an admin reviews and saves its settings (duration, common or shared-out problems, optional surprise twist, jury criteria labels and maxima, optional AI score and its weight, answer limits, final-score weights). Problems and twists are managed in the UI (expected output / criteria are jury-only). Finalists come from the Round 1 qualification (ties included) or are added by entry number. Start, pause, resume, reveal twist, stop and **start over** are atomic, audited SQL transitions; the round auto-ends at its deadline and submits everyone's work. |
+| **Round 2 for students** | Stage bar (first attempt → twist → final answer → submitted), server timer, autosave with local backup, word/char limits, typed-only prompt (paste blocked), submit confirmations, idempotent final submit (one reference), jury questions answered in the page. Students never receive the expected output or the judging criteria. |
+| **Jury** | Judges see each finalist's work live, ask questions, score against the configured criteria (validated against the maxima in SQL), save drafts and lock. Admins see all judges' scores, the AI evaluation, can unlock a judge's score and record an audited Round 2 override. |
+| **Round 2 AI evaluation (optional)** | Same exactly-once queue design as Round 1 (`round2_eval_jobs`, `FOR UPDATE SKIP LOCKED`, retries with backoff), schema-validated Gemini output, subtotal computed server-side. |
+| **Final results** | Final = Round 1 × weight + Round 2 × weight; Round 2 = average of judges + scaled AI (or the latest admin override). Refuses to compute while AI jobs are pending, teams have no jury score or scores are unlocked — unless "compute anyway". Ties share a rank. |
+| **Results publication** | Nothing reaches students until an admin publishes. Per round: show score, rank, qualification, AI feedback, leaderboard (size). Publishing/unpublishing records who and when. Recomputing final results un-publishes them. |
+| **Student dashboard** | Entry number, team members, a 5-step journey (registered → checked in → Round 1 → results → Round 2), live status, announcements for that team, and automatic hand-off into Round 1 / Round 2 when they start. Results page shows exactly what was published. |
+| **Announcements** | Title + message to everyone, checked-in teams, Round 2 finalists, or specific entry numbers; hide/show/delete; audited. The projector only shows "everyone" messages. |
+| **Organizer portal** | New sidebar shell with live Round 1 / Round 2 status and timers; Overview with real counts, setup checklist and recent activity; Round 1 and Round 2 control pages with confirmation dialogs (typed `START OVER` for start-over); Results; Announcements; Settings & health (deployment health, Round 1 timing and qualification %, CSV exports, reset with preview); Participants with filters, pagination and export. |
+| **Exports (CSV)** | Participants (never PINs), login activity, Round 1 ranking, Round 1 answers & scores, Round 2 work, jury scores, final results, audit log. Admin-only, rate-limited, formula-injection-safe, audited. |
+| **Reset preview** | Shows the exact counts that will be deleted and kept before typing `RESET COMPETITION`. Reset now also clears Round 2 finalists/jobs/overrides and un-publishes results; keeps Round 2 problems, twists and settings. |
+| **Rate limits** | Added to evaluation runs, exports, PIN issuance, imports, reset and jury questions (per organizer). |
+| **Duplicate registrations** | Manual add refuses a member whose email or phone is already registered (409 with the existing entry number); the desk can confirm "add anyway". |
+| **UI** | One design system: charcoal base, violet primary, electric-blue secondary, self-hosted Bricolage Grotesque (display) + Instrument Sans (UI); buttons, badges, panels, dialogs, toasts, skeletons, empty and error states; responsive to phone width; visible focus; reduced motion respected. |
+
+### 0.4 How to test the flows (once the database is migrated)
+**Organizer.** Sign in at `/organizer/login` → Overview shows the setup checklist. Registration desk: import CSV, check teams in, "Generate missing PINs", print slips. Challenge pool: import, choose Common A/B. Round 1: Start → (students work) → Stop → Run evaluation. Results: compute, review ties, publish. Round 2: Problems/Twists → Settings (save) → Finalists ("Use Round 1 qualifiers") → Run the round: Start → Reveal twist → Stop. Jury (judge account): ask, score, lock. Results → Final: compute, publish. Settings: exports, reset preview.
+
+**Student.** `/student/login` with entry number + PIN slip + the 4-digit room code from `/display` → dashboard → Round 1 opens automatically when started → submitted screen → results when published → Round 2 page if a finalist.
+
 
 ---
 
@@ -142,7 +184,13 @@ Start, submit and evaluate were multi-request sequences without locks. Double-cl
 | `/api/admin/challenges` (GET/POST/PATCH/DELETE), `/api/admin/challenges/:id`, `/api/admin/challenges/rules`, `/api/admin/challenges/import`, `/api/admin/challenges/import/:batchId` | 401 | 403 | 403 | 403 | ✓ |
 | `POST /api/admin/competition/reset`, `GET /api/admin/round1/preflight`, `/api/admin/round1/*` | 401 | 403 | 403 | 403 | ✓ |
 | `/api/admin/evaluations`, `/api/admin/results`, `/api/admin/entries/:id/round1`, `/api/admin/users`, `/api/admin/ai-settings` | 401 | 403 | 403 | 403 | ✓ |
-| `/api/student/round1/*`, `/api/student/heartbeat`, `/api/student/waiting/state`, `/api/student/log` | 401 | ✓ (own entry only) | 403 | 403 | 403 |
+| `GET /api/admin/overview`, `GET/PUT /api/admin/round1/settings`, `GET /api/admin/competition/reset` (preview) | 401 | 403 | 403 | 403 | ✓ |
+| `/api/admin/round2/*` (config, control, status, problems, twists, finalists, evaluations, review) | 401 | 403 | 403 | 403 | ✓ |
+| `/api/admin/results/final`, `/api/admin/results/publication`, `/api/admin/announcements`, `GET /api/admin/export?type=…` | 401 | 403 | 403 | 403 | ✓ |
+| `GET /api/jury/teams`, `GET /api/jury/teams/:entryId`, `POST /api/jury/questions` | 401 | 403 | 403 | ✓ | ✓ |
+| `PUT /api/jury/scores` (a judge's own score) | 401 | 403 | 403 | ✓ | 403 (admins override instead) |
+| `/api/student/round1/*`, `/api/student/round2/*`, `/api/student/dashboard`, `/api/student/results`, `/api/student/heartbeat`, `/api/student/waiting/state`, `/api/student/log` | 401 | ✓ (own entry only) | 403 | 403 | 403 |
+| `GET /api/health` | public summary; details only for an admin session | | | | |
 | `GET /api/cron/process-evaluations` | bearer `CRON_SECRET` only | | | | |
 
 Every protected endpoint was also tested with four bad sessions, and each returns 401:
@@ -159,6 +207,13 @@ PIN-specific tests:
 - **Volunteers:** cannot bulk-generate PINs, reset, edit entries or touch the pool.
 - **Cross-team access:** student A against student B's submission gets 403.
 - **Tampered and revoked cookies:** 401.
+
+Round 2 / results tests (`tests/api/round2-results.test.ts`, `tests/db/round2.test.ts`):
+- Students never receive Round 2 expected output or judging criteria; the jury does.
+- A non-finalist gets `eligible: false` and 403 on save; a team cannot answer another team's jury question (404).
+- Results are invisible until published and then follow each visibility switch; volunteers and judges cannot publish (403).
+- Targeted announcements reach only their audience; the projector never shows targeted messages.
+- Exports are admin-only and contain no PINs or PIN hashes; unknown export types are rejected.
 
 ---
 
@@ -228,13 +283,14 @@ It is shown on the dashboard (refreshed every 15 s before the start) and on the 
 
 ## 6. Reset Competition Data: exact behaviour
 **Who:** admins only. Volunteers and judges get 403.
-**Where:** Admin dashboard → "Reset Competition Data". You must type `RESET COMPETITION`.
+**Where:** Settings & health → "Reset competition data". A preview lists the exact counts that will be deleted and kept; then you must type `RESET COMPETITION`. (Each round also has its own **Start over**, typed `START OVER`; Round 1's is refused once Round 2 has started.)
 
 **Refused when:** Round 1 or Round 2 is `running` or `paused` (HTTP 409). Stop the round first.
 
 **Deleted**, in one transaction, in foreign-key order. Counts are returned to you and written to the audit log.
 - Round 1: challenge assignments, which cascade to submissions, submission versions, evaluation jobs, AI evaluations and human review overrides; plus round results.
-- Round 2: round 2 assignments and states, judge questions, judge scores, round 2 AI evaluations, and final results.
+- Round 2: finalists, round 2 assignments and states, judge questions, judge scores, round 2 AI evaluations and jobs, round 2 score overrides, and final results.
+- Results publication: both Round 1 and final results are un-published.
 - Activity logs of in-round events only: `submission`, `tab_hidden`, `tab_visible`, `window_blur` and `paste_blocked`.
 - All announcements.
 
@@ -243,6 +299,7 @@ It is shown on the dashboard (refreshed every 15 s before the start) and on the 
 **Kept:**
 - entries, members, entry numbers, PINs, attendance (check-in) and disqualification flags;
 - the whole challenge pool and its import history, Common A/B and assignment rules;
+- Round 2 problems, surprise twists and Round 2 settings;
 - organizer, judge and admin accounts, event settings, the Gemini key and round configuration (timers);
 - the audit log and login/session history.
 
@@ -275,17 +332,20 @@ Students stay signed in and return to the waiting room.
 **All results are from a local staging stack**, not from Vercel or Supabase:
 - Postgres 16 → PostgREST 12.2.3 → `next start`, a mock Gemini server and k6, all on one machine with **2 vCPU and 7 GB**.
 - Synthetic data only.
-- **No 200-user test has been run against Vercel + Supabase.** That needs a separate staging Supabase project or branch (§11).
+- **No 200-user test has been run against Vercel + Supabase.** There is no free separate staging database (§9.2); the numbers below are an upper bound for a 2-CPU box, not a production measurement.
 
 | Check | Command | Result |
 |---|---|---|
 | Typecheck | `npx tsc --noEmit` | ✅ 0 errors. No `any` casts or ignore directives were added. |
 | Lint | `npx next lint` | ✅ no warnings |
-| Production build | `npx next build` | ✅ 53 routes, middleware 26.8 kB |
-| Unit tests | `npm test` | ✅ 23 passed. 1 is skipped unless `PEB_PS_WORKBOOK` is set; with your workbook it passes (4/4 in that file). |
-| Database function tests | `PGHOST=/tmp PGPORT=54329 npm run test:db` | ✅ **40/40** |
-| HTTP tests (local stack) | `tests/api/run.sh` | ✅ **22/22**, plus the real-workbook test (skipped unless `PEB_PS_WORKBOOK` is set; passes with your file). The suite is re-runnable on the same staging DB, verified with two consecutive runs. |
-| Migration up → down → up | `tests/db/rollback.sh` | ✅ 0005 and 0004 roll back cleanly with data kept (entries survive), and re-apply cleanly. |
+| Production build | `npx next build` | ✅ all routes compiled (phase 3 adds 25 API routes and 6 pages), middleware 26.8 kB |
+| Unit tests | `npm test` | ✅ 26 passed (3 new: CSV formula safety, schema-error detection, Round 2 evaluator validation). 1 is skipped unless `PEB_PS_WORKBOOK` is set; with your workbook it passes. |
+| Database function tests | `PGHOST=/tmp PGPORT=54329 npm run test:db` | ✅ **54/54** (14 new for Round 2, final results, publication, announcements, reset, privileges) |
+| HTTP tests (local stack) | `tests/api/run.sh` | ✅ **30/30** (85 endpoint rows in the authorization matrix; 8 new end-to-end Round 2 / results / announcements / exports / reset tests), plus the real-workbook test (skipped unless `PEB_PS_WORKBOOK` is set). Re-runnable: two consecutive runs both pass. |
+| Migration up → down → up | `tests/db/rollback.sh` | ✅ 0006, 0005 and 0004 roll back cleanly with data kept, and re-apply cleanly (`app_schema_status` = v6, nothing missing). |
+| Upgrade of a production-shaped DB | 0001–0003 + sample data, then 0004 → 0006 | ✅ applies without errors; entry numbers back-filled; existing challenges become `review`; old public announcement still visible; schema v6 complete. |
+| Login 500 reproduction | production-shaped DB behind PostgREST | ✅ raw call gives `PGRST202` (the cause); the app now returns 503 `setup_required` + a sign-in banner; the same login against the migrated DB returns 200. |
+| Browser walk-through | Playwright + Chromium, local production build, desktop 1440 px and phone 390 px | ✅ 40+ screenshots (student login, dashboard, Round 1 arena, Round 2 stages, results; organizer overview, rounds, jury, results, announcements, settings, desk, pool, projector) render without page errors or CSP violations. Visual issues found this way were fixed and re-checked (toggle switch, phone header, PIN placeholder spacing); the Round 2 stage bar fix for phones was not re-screenshotted. |
 | Real workbook (600 PS) over HTTP | `PEB_PS_WORKBOOK=… node --test tests/api/real-workbook.test.ts` | ✅ payload 293 KB · preview 84–115 ms · publish 599 rows ~30 ms · re-upload = 599 unchanged · list/search/filter 48–94 ms |
 | `npm audit --omit=dev` | | 11 issues, all present before this work (see S17) |
 
@@ -310,29 +370,30 @@ What the HTTP tests cover:
 - Easy exclusion changing eligible counts; reset over HTTP;
 - the full event journey: import → check-in → PIN → login → device release → start → autosave → pause/resume → advance ×4 → stop → AI evaluation → results → logout.
 
-### Load test: 200 concurrent students (k6, local stack, 2 vCPU, phase 2 run with PINs)
+### Load test: 200 concurrent students (k6, local stack, 2 vCPU, phase 3 run)
 Runner: `tests/load/run-local.sh`. Every service and the load generator share the same 2 CPUs.
 
 | Scenario | Volume | p50 | p95 | max | Errors | Target | Result |
 |---|---|---|---|---|---|---|---|
-| 200 simultaneous logins (entry + **PIN** + code) | 200 | 1.74 s | **2.48 s** | 2.54 s | 0 | p95 < 2 s | ❌ on this box (phase 1 without PIN: 1.23 s), see note |
-| 200 students active for 4 min (autosave ~5 s, polling, heartbeat) | 27,293 req, ~99 req/s | 10 ms | 89 ms | 4.0 s | 4 (0.01%) | p95 < 800 ms, < 0.5% | ✅ |
-| — autosave only | 10,709 | 8 ms | 36 ms | 1.4 s | 4 | p95 < 800 ms | ✅ |
-| Admin dashboard during load | 2 VUs | 24 ms | 95 ms | 1.9 s | 0 | p95 < 1.5 s | ✅ |
-| Registration desk during load | 3 VUs | 21 ms | 128 ms | 3.6 s | 0 | p95 < 1.5 s | ✅ |
-| **Timer-expiry storm** (all 200 timers expire together, 2 advance calls each) | 400 | 561 ms | **3.65 s** | 4.0 s | 0 | p95 < 2.5 s | ❌ on this box, see note |
-| AI evaluation, 884 answers (400 non-empty), mock Gemini with ~7% injected 429/500 | 428 model calls | — | — | 296 s wall | 0 failed | each answer exactly once | ✅ 400 OK + 28 injected errors retried; 484 empty answers scored 0 without a call |
-| **Reset while an evaluation batch is in flight** | 1 reset | — | — | — | — | nothing resurrected; both rounds `not_started`; data kept | ✅ 0 assignments, submissions, jobs and evaluations afterwards; 231 entries, 230 PINs, 221 check-ins and 641 challenges kept |
+| 200 simultaneous logins (entry + PIN + code) | 200 | 2.70 s | **3.24 s** | 3.29 s | 0 | p95 < 2 s | ❌ on this box (phase 2 run: 2.48 s), see note |
+| **Waiting room**: 200 teams polling their dashboard every ~4 s for 90 s (new) | 7,424 req | 5 ms | 12 ms | 216 ms | 0 | p95 < 800 ms | ✅ |
+| 200 students active for 4 min (autosave ~5 s, polling, heartbeat) | 27,365 req, ~100 req/s | 9 ms | 70 ms | 3.4 s | 6 (0.02%) | p95 < 800 ms, < 0.5% | ✅ |
+| — autosave only | 10,741 | 7 ms | 31 ms | 1.0 s | 6 | p95 < 800 ms | ✅ |
+| Admin dashboard during load | 2 VUs | 21 ms | 64 ms | 1.2 s | 0 | p95 < 1.5 s | ✅ |
+| Registration desk during load | 3 VUs | 15 ms | 591 ms | 2.7 s | 0 | p95 < 1.5 s | ✅ |
+| **Timer-expiry storm** (all 200 timers expire together, 2 advance calls each) | 400 | 477 ms | **2.86 s** | 3.0 s | 0 | p95 < 2.5 s | ❌ on this box, see note |
+| AI evaluation, 880 answers (400 non-empty), mock Gemini with ~7% injected 429/500 | 433 model calls | — | — | 209 s wall | 0 failed | each answer exactly once | ✅ 400 OK + 33 injected errors retried; 480 empty answers scored 0 without a call |
+| **Reset while an evaluation batch is in flight** | 1 reset | — | — | — | — | nothing resurrected; both rounds `not_started`; data kept | ✅ 0 assignments, submissions, jobs and evaluations afterwards; 230 entries, 228 PINs, 220 check-ins and 42 challenges kept |
 
 **Integrity after the storm:** exactly 200 challenges locked (one per entry), 0 duplicate submission refs, 0 duplicate evaluation jobs, 0 entries with more than one live session, 0 unexpected 409s.
 
 **Notes**
-- **Login latency.** Login now does a PIN hash check (scrypt, ~10 ms CPU, reduced from ~45 ms in this update with no security loss, because the pepper is the real protection) plus one extra database round trip. With 200 logins in the same second on 2 shared CPUs, that queues up to about 2.5 s.
+- **Login latency.** Login now does a PIN hash check (scrypt, ~10 ms CPU, reduced from ~45 ms in this update with no security loss, because the pepper is the real protection) plus one extra database round trip. With 200 logins in the same second on 2 shared CPUs (k6, Node, PostgREST and Postgres all competing), that queues up to about 2.5–3.2 s; the run-to-run spread on this box is large.
   - On Vercel, logins are spread across function instances.
   - In practice teams arrive over minutes, not within one second.
   - This is still the number to re-measure on real infrastructure.
 - **Storm.** This is app-tier CPU contention on the 2-vCPU box. Measured directly in the database in phase 1, 400 concurrent advance calls finished in 265 ms in total. Real timers are also staggered, because each one starts when the student opens the challenge.
-- **The 4 errors** were TCP keep-alive resets between k6 and a single `next start` process. They are specific to self-hosted Node, and the student page retries autosave and keeps a local copy.
+- **The 6 errors** were TCP keep-alive resets between k6 and a single `next start` process. They are specific to self-hosted Node, and the student page retries autosave and keeps a local copy.
 
 ---
 
@@ -344,55 +405,50 @@ Runner: `tests/load/run-local.sh`. Every service and the load generator share th
 | `0003_reconcile_production_schema.sql` | Brings 4 production-only migrations into the repo. It is a no-op on production. | Yes |
 | `0004_event_readiness.sql` | Entry numbers (with a trigger, so old inserts still work), per-member fields, a team-size constraint of **1–2** (it **fails if any existing entry has 3+ members**; a read-only check of production on 2026-10-13 found 10 entries, all with at most 2 members, 104 challenges rated easy/medium/hard, both rounds `not_started`, and none of 0003–0005 applied), common slots, sessions, rate limits and all the round functions. | Yes, additive. Old code keeps working. |
 | `0005_pins_pool_reset.sql` | PIN columns, pool status, difficulty `expert`/`unrated`, import batches, assignment snapshots, assignment rules, preflight, the new login/PIN/publish/reset/edit functions. **Existing challenges become `review`**, so nothing is assigned until you approve the pool. | Yes for the schema. The old app's assignment code ignores `pool_status`. |
+| `0006_round2_results_comms.sql` | Round 2 settings/finalists/jury/AI queue/overrides, final results, results publication settings, announcement targeting (the public read policy now only exposes `audience = 'all'`), student dashboard/results functions, reset preview, `app_schema_status()`, and an extended `competition_reset`. | Yes, additive. New columns have defaults; existing function signatures are unchanged. |
 
-### 9.2 Staging first (requires your approval, because it costs money)
-Production and preview currently share one Supabase database, so a separate staging database is needed. Options:
-- (a) A Supabase **branch** of the production project. It is billed hourly while it exists, and Supabase asks for cost confirmation.
-- (b) A new Supabase project. The free-tier active-project limit is already reached, so this means pausing another project or using a paid plan.
-
-Steps once one exists:
-1. Apply `0001`…`0005` to staging, in order.
-2. Point a Vercel **Preview** environment at it. Set preview-scoped `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SESSION_SECRET`, `EVENT_SECRET` and `PIN_PEPPER`, with values different from production.
-3. Seed it with synthetic data only (`tests/stack/seed-staging.ts`, pointed at staging).
-4. Run the HTTP suite and k6 (`tests/load/*.js` with `APP_URL` set to the preview URL) to get **real-infrastructure numbers**.
-5. Run `tests/db/rollback.sh`'s down → up sequence once against staging.
+### 9.2 Staging (₹0 budget)
+There is no separate staging database: both free Supabase project slots are in use, and Supabase branches are billed, so neither was created. Instead:
+- Every migration, the full HTTP suite and the k6 load tests run against a **local staging stack** that mirrors Supabase (Postgres 16 + PostgREST + the same migrations) with synthetic data (`tests/stack/start.sh`, `tests/api/run.sh`, `tests/load/run-local.sh`).
+- Migrations were also applied to a **production-shaped copy** (only 0001–0003, like production today) to confirm they upgrade it cleanly and to reproduce the login 500.
+- `tests/db/rollback.sh` proves `0006 → 0005 → 0004` roll back and re-apply cleanly.
+- Vercel Preview uses the production database. Because 0003–0006 are additive and safe with the currently deployed `main`, applying them to that database is what unblocks the preview — but it is a change to the production database, so it needs your go-ahead (§9.3 step 3).
 
 ### 9.3 Production (each step needs your explicit go-ahead)
 1. Take a backup: Supabase dashboard → Database → Backups, or `pg_dump`.
 2. Set `PIN_PEPPER` (Production scope) in Vercel.
-3. Apply `0003`, `0004` and `0005` to production, in that order and one at a time, checking for errors after each.
-4. Merge PR #4 into `main`, which triggers the Vercel production deploy. **Everyone must sign in again**, because the cookie format changed.
+3. Apply `0003`, `0004`, `0005` and `0006` to production, in that order and one at a time, checking for errors after each. Then open `/api/health` on the preview (signed in as admin): it must say `database: ok, schemaVersion: 6`. The preview login then works.
+4. Test the preview end to end (§0.4) with a test entry. Then merge PR #4 into `main`, which triggers the Vercel production deploy. **Everyone must sign in again**, because the cookie format changed.
 5. Admin → Challenge pool → Import: upload the final workbook, then **Merge** + **approved**. Then mark `CH-*` / `GK-*` as **test**, choose Common A/B and confirm the rules (Easy excluded).
 6. Registration desk → **Generate missing PINs**, then print the slips (or download the CSV) and store them securely.
 7. Smoke test with one test entry: check in, log in with its PIN, Start, answer, Stop, Run evaluation. Then **Reset Competition Data** and delete the test entry.
-8. Confirm that the dashboard readiness check is green.
+8. Confirm that the Overview's "Before the event" list is empty (or only has items you accept).
+9. Round 2: add the real problem(s), review and save Round 2 settings before the event day.
 
 ### 9.4 Rollback
-- **App rollback (preferred, no data loss):** promote the previous production deployment in Vercel. 0004 and 0005 are additive, and the old app runs against them. Users must sign in again.
-- **Database rollback (only if really needed):** `supabase/rollback/0005_down.sql`, then `supabase/rollback/0004_down.sql`.
+- **App rollback (preferred, no data loss):** promote the previous production deployment in Vercel. 0004–0006 are additive, and the old app runs against them. Users must sign in again.
+- **Database rollback (only if really needed):** `supabase/rollback/0006_down.sql`, then `0005_down.sql`, then `0004_down.sql` (stop at the version you want).
   - These **drop** PIN hashes, pool status, import history, assignment snapshots, rules, sessions and entry numbers. They keep participants, members, challenges and submissions.
-  - Re-applying `0004` and `0005` afterwards works; this was tested locally (`tests/db/rollback.sh`).
+  - `0006_down` drops Round 2 finalists/jobs/overrides, announcement targeting and publication settings, and restores the 0005 `competition_reset`.
+  - Re-applying `0004`–`0006` afterwards works; this was tested locally (`tests/db/rollback.sh`).
   - Take a backup first.
 
 ---
 
 ## 10. Known risks and limitations
-- **Not tested on Vercel + Supabase at 200 users.** The local numbers above are an upper bound for 2 vCPU, not a production measurement.
-- **Login burst p95 of 2.5 s and timer storm p95 of 3.7 s** missed their targets on the local box. Both should be re-measured on staging.
-- **Gemini quota.** About 800 evaluations are needed for 200 entries. On the free tier (~10 requests/min for 2.5 Flash) that is about 80 minutes; on a paid tier with `GEMINI_CONCURRENCY=4` it is a few minutes. Failures can be retried.
+- **The preview cannot sign anyone in until migrations 0003–0006 are applied** to the database it uses (the production database). The app now says so clearly (503 + banner + `/api/health`) instead of a 500.
+- **Not tested on Vercel + Supabase at 200 users.** The local numbers are an upper bound for 2 vCPU, not a production measurement. Login burst (p95 3.2 s) and the timer-expiry storm (p95 2.9 s) missed their targets on the local box; everything else passed with large margins.
+- **Gemini quota.** About 800 Round 1 evaluations (+1 per finalist in Round 2 if AI scoring is on). On the free tier (~10 requests/min for 2.5 Flash) that is about 80 minutes; failures can be retried.
 - **PIN distribution is a physical process.** Slips are shown once. A lost slip means re-issuing the PIN at the desk.
-- **The UI was verified** by build, lint and HTTP tests, plus manual reasoning. It was **not** screenshot-tested in a real browser.
-- **Round 2 / judge scoring is not implemented** (unchanged). Reset already clears its tables.
+- **Round 2 rules are yours to confirm.** The settings screen starts from suggested values (45 min, 4 jury criteria × 10, no AI score, weights 1 + 1); Round 2 refuses to start until an admin saves them.
+- **Round 1 rubric** (five criteria × 10 per challenge) is fixed in code; per-challenge limits and qualification % are configurable.
 - **Difficulty data in the workbook:** 5 rows are unrated and 1 has a blank category. They are excluded from slots 3–4 until rated.
 
 ## 11. Decisions and data still needed from you
-1. **Staging database:** a Supabase branch or a new project. Both cost money; this needs your OK.
-2. **Approval to apply 0003/0004/0005 to production and merge PR #4**, after staging.
-3. **Set `PIN_PEPPER`** in Vercel (Production + Preview, with different values) before PINs are issued.
-4. **Keep the room access code in addition to the PIN?** It is currently required, and it stops a team logging in from outside the hall. It could be made optional if you prefer.
-5. **Default limits** for PS rows without limits: 150 words / 2000 characters?
-6. **Which PS IDs are Common A and Common B?**
-7. **Mark `CH-*` and `GK-001…005` as test?** (Recommended.)
-8. **Workbook fixes:** the `CRW-034` duplicate ID, the 5 unrated rows and the 1 blank-category row.
-9. **Should Expert be eligible for slots 3–4?** There are only 7, so it barely changes the pool. And should slots 3/4 use different difficulties?
-10. **Event date**, so the deployment timeline can be planned.
+1. **Approval to apply migrations 0003 → 0006 to the Supabase project** (the one Production and Preview share). This is the only thing blocking sign-in on the preview. All four are additive and safe with the current `main`; take a backup first (§9.3).
+2. **Set `PIN_PEPPER`** in Vercel (Production + Preview, different values) before PINs are issued.
+3. **Round 2 rules:** duration, problem(s), twist yes/no, jury criteria and maxima, AI score yes/no, Round 1/Round 2 weights — enter them on Round 2 → Settings.
+4. **Keep the room access code in addition to the PIN?** It is currently required, and it stops a team logging in from outside the hall.
+5. **Which PS IDs are Common A and Common B?** Mark `CH-*` / `GK-001…005` as test? (Recommended.)
+6. **Workbook fixes:** the `CRW-034` duplicate ID, the 5 unrated rows and the 1 blank-category row.
+7. **Event date**, so the deployment timeline can be planned.

@@ -4,6 +4,7 @@ import { requireApiRole } from '@/lib/auth/session';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { jsonError, jsonOk, readJson, serverError } from '@/lib/http';
 import { COMPARED_FIELDS, MAX_SHEETS, MAX_TOTAL_ROWS, parseChallengeSheets, type ChallengeField } from '@/lib/challenges/import';
+import { limitAction } from '@/lib/ops/rate-limit';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -55,6 +56,12 @@ export async function POST(req: NextRequest) {
   if (!auth.ok) return auth.response;
   const body = await readJson(req, bodySchema, 6 * 1024 * 1024);
   if (!body.ok) return body.response;
+  try {
+    const limited = await limitAction(`challenge-import:${auth.session.userId}`, 30, 300);
+    if (limited) return limited;
+  } catch (err) {
+    return serverError('challenge-import rate limit', err);
+  }
 
   const result = parseChallengeSheets(body.data.sheets, { mapping: body.data.mapping, excludedSheets: body.data.excludedSheets });
   const headers = [...new Set(body.data.sheets.flatMap((s) => s.rows.slice(0, 3).flat().map((h) => h.trim()).filter((h) => h && h.length <= 60)))].slice(0, 200);

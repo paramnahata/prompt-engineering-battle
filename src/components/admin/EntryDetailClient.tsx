@@ -55,7 +55,7 @@ export default function EntryDetailClient({ entryId }: { entryId: string }) {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="text-xs uppercase tracking-wider text-muted">Entry</div>
+          <div className="text-xs text-muted">Entry</div>
           <h1 className="text-3xl font-bold tabular-nums">{entry.entry_number}</h1>
           <p className="text-sm">{entry.team_name || (entry.is_team ? 'Unnamed team' : 'Individual')} <span className="text-xs text-muted">· Reg. ID {entry.registration_id}</span></p>
           <ul className="mt-1 text-xs text-muted">

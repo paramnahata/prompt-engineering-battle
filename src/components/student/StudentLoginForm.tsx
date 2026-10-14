@@ -1,10 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, KeyRound, Swords } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
+import AuthFrame from '@/components/auth/AuthFrame';
+import { Alert } from '@/components/ui/Feedback';
+import { Button } from '@/components/ui/Button';
 
-export default function StudentLoginForm({ organizerSignedIn }: { organizerSignedIn: boolean }) {
+const digits = (v: string, n: number) => v.replace(/\D/g, '').slice(0, n);
+
+export default function StudentLoginForm({ organizerSignedIn, setupIssue }: { organizerSignedIn: boolean; setupIssue?: string | null }) {
   const [entryNumber, setEntryNumber] = useState('');
   const [pin, setPin] = useState('');
   const [accessCode, setAccessCode] = useState('');
@@ -18,14 +22,13 @@ export default function StudentLoginForm({ organizerSignedIn }: { organizerSigne
     setError(null);
     try {
       const res = await fetch('/api/student/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store',
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
         body: JSON.stringify({ entryCode: entryNumber.trim(), pin: pin.trim(), accessCode: accessCode.trim() }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(body.error ?? 'Login failed. Check your details and try again.');
+        setError(body.error ?? 'Sign-in failed. Check your details and try again.');
+        if (body.code === 'bad_access_code') setAccessCode('');
         setLoading(false);
         return;
       }
@@ -36,90 +39,46 @@ export default function StudentLoginForm({ organizerSignedIn }: { organizerSigne
     }
   };
 
+  const input = 'peb-input py-3 text-lg tabular';
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden p-5 sm:p-8">
-      <div className="pointer-events-none absolute -left-24 top-1/4 h-72 w-72 rounded-full bg-violet-600/20 blur-[100px]" />
-      <div className="pointer-events-none absolute -right-24 bottom-0 h-72 w-72 rounded-full bg-cyan-500/10 blur-[100px]" />
-      <div className="relative grid w-full max-w-4xl overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/65 shadow-2xl shadow-black/30 backdrop-blur-xl md:grid-cols-[0.9fr_1.1fr]">
-        <section className="hidden flex-col justify-between border-r border-white/10 bg-gradient-to-br from-violet-950/70 via-slate-950/30 to-cyan-950/40 p-8 md:flex lg:p-10">
-          <Link href="/" className="inline-flex w-fit items-center gap-2 text-xs font-semibold text-slate-400 transition hover:text-white"><ArrowLeft className="h-4 w-4" /> Back to home</Link>
-          <div>
-            <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-violet-300/20 bg-violet-300/10"><Swords className="h-7 w-7 text-cyan-200" /></span>
-            <p className="mt-8 text-[10px] font-bold uppercase tracking-[0.26em] text-cyan-300">Participant access</p>
-            <h1 className="mt-3 text-4xl font-black leading-tight">Enter the arena.</h1>
-            <p className="mt-4 text-sm leading-7 text-slate-400">Four challenges. One sharp mind. Build the prompt that gets the best result.</p>
-          </div>
-          <p className="text-xs text-slate-500">One device per entry. Your progress is saved to your entry number.</p>
-        </section>
-
-        <section className="p-6 sm:p-9 lg:p-11">
-          <Link href="/" className="mb-8 inline-flex items-center gap-2 text-xs font-semibold text-slate-400 transition hover:text-white md:hidden"><ArrowLeft className="h-4 w-4" /> Back to home</Link>
-          <div className="mb-8">
-            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-300/20 bg-cyan-300/[0.07]"><KeyRound className="h-5 w-5 text-cyan-200" /></div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-violet-300">Secure sign in</p>
-            <h2 className="mt-2 text-3xl font-bold tracking-tight">Student login</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-400">Enter your entry number and team PIN from the registration desk, plus the 4-digit code shown on the screen.</p>
-          </div>
-
-          {organizerSignedIn && (
-            <p className="mb-5 rounded-xl border border-amber-300/20 bg-amber-400/10 p-3 text-xs text-amber-100">
-              This browser is signed in as an organizer. Signing in as a student will replace that session.
-            </p>
-          )}
-
-          <form onSubmit={submit} className="flex flex-col gap-5">
-            <div>
-              <label htmlFor="entryNumber" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">Entry number</label>
-              <input
-                id="entryNumber"
-                className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900/80 p-3.5 text-lg tabular-nums placeholder:text-base placeholder:text-slate-600 focus:border-violet-300/50 focus:outline-none focus:ring-2 focus:ring-violet-400/10"
-                placeholder="e.g. 7"
-                inputMode="numeric"
-                autoComplete="username"
-                maxLength={5}
-                value={entryNumber}
-                onChange={(e) => setEntryNumber(e.target.value.replace(/\D/g, '').slice(0, 5))}
-                required
-                autoFocus
-              />
-            </div>
-            <div>
-              <label htmlFor="pin" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">Team PIN</label>
-              <input
-                id="pin"
-                type="password"
-                className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900/80 p-3.5 text-lg tracking-[0.4em] tabular-nums placeholder:text-base placeholder:tracking-normal placeholder:text-slate-600 focus:border-violet-300/50 focus:outline-none focus:ring-2 focus:ring-violet-400/10"
-                placeholder="6-digit PIN"
-                inputMode="numeric"
-                autoComplete="current-password"
-                maxLength={6}
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                required
-              />
-            </div>
-            <div>
-              <label htmlFor="accessCode" className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">Event access code</label>
-              <input
-                id="accessCode"
-                className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900/80 p-3.5 text-lg tracking-[0.4em] tabular-nums placeholder:text-base placeholder:tracking-normal placeholder:text-slate-600 focus:border-cyan-300/50 focus:outline-none focus:ring-2 focus:ring-cyan-400/10"
-                placeholder="4-digit code"
-                inputMode="numeric"
-                maxLength={4}
-                autoComplete="one-time-code"
-                value={accessCode}
-                onChange={(e) => setAccessCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                required
-              />
-            </div>
-            {error && <p role="alert" className="rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</p>}
-            <button className="peb-btn-primary mt-1 w-full" disabled={loading || !entryNumber || pin.length !== 6 || accessCode.length !== 4}>
-              {loading ? 'Verifying access…' : 'Enter the arena'}
-            </button>
-          </form>
-          <p className="mt-6 text-center text-xs leading-5 text-slate-500">Lost your PIN or having trouble? The registration desk can issue a new PIN and check your attendance.</p>
-        </section>
+    <AuthFrame aside={
+      <div>
+        <h1 className="font-display text-[3.4rem] font-semibold leading-[1.02] text-white" style={{ fontVariationSettings: "'wdth' 84" }}>Write the prompt that wins.</h1>
+        <p className="mt-5 max-w-md text-lg leading-8 text-slate-300">Four timed challenges. One shot at the final. Sign in with the details from your PIN slip and the code on the big screen.</p>
+        <ul className="mt-8 space-y-3 text-slate-300">
+          <li className="flex gap-3"><span className="font-display text-xl font-semibold text-violet-300">1</span><span><span className="text-white">Entry number</span> — printed on your PIN slip.</span></li>
+          <li className="flex gap-3"><span className="font-display text-xl font-semibold text-violet-300">2</span><span><span className="text-white">Team PIN</span> — six digits, also on your slip. Keep it private.</span></li>
+          <li className="flex gap-3"><span className="font-display text-xl font-semibold text-violet-300">3</span><span><span className="text-white">Room code</span> — four digits on the projector. It changes every two minutes.</span></li>
+        </ul>
       </div>
-    </main>
+    }>
+      <h2 className="text-2xl font-semibold text-white">Student sign in</h2>
+      <p className="mt-1 text-sm text-muted">Your team can be signed in on one device at a time.</p>
+      {setupIssue && <Alert tone="error" className="mt-5">{setupIssue}</Alert>}
+      {organizerSignedIn && <Alert tone="warning" className="mt-5">This browser is signed in as an organizer. Signing in as a student replaces that session.</Alert>}
+      <form onSubmit={submit} className="mt-6 space-y-5" noValidate>
+        <div>
+          <label htmlFor="entryNumber" className="peb-label">Entry number</label>
+          <input id="entryNumber" className={input} placeholder="e.g. 42" inputMode="numeric" autoComplete="username" maxLength={5} value={entryNumber}
+            onChange={(e) => setEntryNumber(digits(e.target.value, 5))} required autoFocus />
+        </div>
+        <div>
+          <label htmlFor="pin" className="peb-label">Team PIN</label>
+          <input id="pin" type="password" className={`${input} tracking-[0.35em] placeholder:tracking-normal`} placeholder="6 digits" inputMode="numeric" autoComplete="current-password" maxLength={6}
+            value={pin} onChange={(e) => setPin(digits(e.target.value, 6))} required aria-describedby="pin-help" />
+          <p id="pin-help" className="peb-help">Lost it? The registration desk can issue a new PIN.</p>
+        </div>
+        <div>
+          <label htmlFor="accessCode" className="peb-label">Room code</label>
+          <input id="accessCode" className={`${input} tracking-[0.35em] placeholder:tracking-normal`} placeholder="4 digits" inputMode="numeric" maxLength={4} autoComplete="off"
+            value={accessCode} onChange={(e) => setAccessCode(digits(e.target.value, 4))} required aria-describedby="code-help" />
+          <p id="code-help" className="peb-help">Shown on the projector screen in the hall.</p>
+        </div>
+        {error && <Alert tone="error">{error}</Alert>}
+        <Button type="submit" variant="primary" className="w-full" loading={loading} disabled={!entryNumber || pin.length !== 6 || accessCode.length !== 4}>
+          {loading ? 'Checking…' : <>Sign in <ArrowRight className="h-4 w-4" aria-hidden="true" /></>}
+        </Button>
+      </form>
+    </AuthFrame>
   );
 }

@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export default async function ChallengesPage() {
   const session = await requirePageRole(['admin'], '/admin/challenges');
   return (
-    <OrganizerShell role={session.role} back={{ href: '/admin/dashboard', label: 'Dashboard' }} wide>
+    <OrganizerShell role={session.role} userId={session.userId} wide>
       <ChallengePoolClient />
     </OrganizerShell>
   );

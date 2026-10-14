@@ -14,5 +14,7 @@ const memberSchema = z.object({
 export const entryPayloadSchema = z.object({
   team_name: z.string().trim().max(120).optional(),
   members: z.array(memberSchema).min(1, 'A team has at least 1 member').max(2, 'A team has at most 2 members'),
+  /** Manual add only: register even if a member's email/phone already exists (after the desk has checked). */
+  allow_duplicate: z.boolean().optional(),
 });
 

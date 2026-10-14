@@ -51,8 +51,8 @@ export default function AccessCodePanel({ large = false }: { large?: boolean }) 
 
   return (
     <div className="peb-card flex flex-col items-center justify-center text-center">
-      <div className="mb-2 text-xs uppercase tracking-widest text-muted">Event access code</div>
-      <div className={`font-mono font-bold tracking-[0.3em] text-accent-cyan ${large ? 'text-7xl sm:text-8xl' : 'text-5xl'}`} aria-live="polite">{code ?? '····'}</div>
+      <div className="mb-2 text-xs text-muted">Event access code</div>
+      <div className={`font-display font-semibold tabular tracking-[0.18em] text-white ${large ? 'text-8xl sm:text-9xl' : 'text-5xl'}`} aria-live="polite">{code ?? '····'}</div>
       <div className="mt-2 text-xs text-muted">{error ?? (secondsLeft !== null ? `Changes in ${secondsLeft}s` : 'Loading…')}</div>
     </div>
   );

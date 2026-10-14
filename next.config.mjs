@@ -1,21 +1,27 @@
 /** @type {import('next').NextConfig} */
 
 const isProd = process.env.NODE_ENV === 'production';
+// Vercel injects its feedback toolbar (vercel.live) into PREVIEW deployments
+// only. Allow exactly the origins it documents there, never in production.
+const isVercelPreview = process.env.VERCEL_ENV === 'preview';
+const toolbar = (sources) => (isVercelPreview ? ` ${sources}` : '');
 
 // Next.js App Router hydration needs inline scripts; everything else is
 // locked to this origin. The browser never talks to Supabase or Gemini
 // directly — all data goes through our own API routes.
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isProd ? '' : " 'unsafe-eval'"}`,
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  `connect-src 'self'${isProd ? '' : ' ws: wss:'}`,
+  `script-src 'self' 'unsafe-inline'${isProd ? '' : " 'unsafe-eval'"}${toolbar('https://vercel.live')}`,
+  `style-src 'self' 'unsafe-inline'${toolbar('https://vercel.live')}`,
+  `img-src 'self' data: blob:${toolbar('https://vercel.live https://vercel.com')}`,
+  `font-src 'self' data:${toolbar('https://vercel.live https://assets.vercel.com')}`,
+  `connect-src 'self'${isProd ? '' : ' ws: wss:'}${toolbar('https://vercel.live wss://ws-us3.pusher.com')}`,
+  `frame-src ${isVercelPreview ? 'https://vercel.live' : "'none'"}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
   "object-src 'none'",
+  "worker-src 'self' blob:",
 ].join('; ');
 
 const securityHeaders = [

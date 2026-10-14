@@ -125,7 +125,7 @@ export default function CsvImportPanel({ onImported }: { onImported: () => void 
         Export the registration sheet as CSV. Teams spread over several rows (merged Team name / ID cells) are grouped automatically,
         and every member keeps their own email and phone. Re-importing the same file never creates duplicates.
       </p>
-      <input type="file" accept=".csv,text/csv" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} className="mb-3 text-sm" aria-label="Choose CSV file" />
+      <input type="file" accept=".csv,text/csv" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} className="mb-3 text-sm text-slate-300 file:mr-3 file:rounded-md file:border file:border-line file:bg-raised file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-slate-800" aria-label="Choose CSV file" />
       {fileName && <p className="mb-3 text-xs text-muted">File: {fileName}{busy ? ' · reading…' : ''}</p>}
       {error && <p className="mb-3 rounded-lg border border-rose-400/20 bg-rose-500/10 p-2 text-sm text-rose-200" role="alert">{error}</p>}
       {result && <p className="mb-3 rounded-lg border border-emerald-400/20 bg-emerald-500/10 p-2 text-sm text-emerald-100" role="status">{result}</p>}

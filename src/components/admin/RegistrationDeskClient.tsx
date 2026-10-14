@@ -233,7 +233,7 @@ function CheckInPanel({ entries, pending, onSetPresent, onIssuePin, onEdit, issu
         <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-wider text-muted">Entry</div>
+              <div className="text-xs text-muted">Entry</div>
               <div className="text-3xl font-bold tabular-nums">{selected.entry_number}</div>
               <div className="text-sm">{selected.team_name || (selected.is_team ? 'Unnamed team' : 'Individual')}</div>
               <div className="text-xs text-muted">Reg. ID {selected.registration_id}</div>

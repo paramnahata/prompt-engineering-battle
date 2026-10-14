@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export default async function UsersPage() {
   const session = await requirePageRole(['admin'], '/admin/users');
   return (
-    <OrganizerShell role={session.role}>
+    <OrganizerShell role={session.role} userId={session.userId}>
       <UserManagementClient />
     </OrganizerShell>
   );

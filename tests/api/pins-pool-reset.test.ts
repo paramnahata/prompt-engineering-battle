@@ -77,8 +77,15 @@ test('volunteers can re-issue one PIN but cannot bulk-generate, reset, edit entr
 test('team size: 3 members rejected on manual add / edit, solo entries accepted', async () => {
   const three = await admin.req('POST', '/api/admin/participants', { members: [{ full_name: 'A' }, { full_name: 'B' }, { full_name: 'C' }] });
   assert.equal(three.status, 400);
-  const solo = await admin.req('POST', '/api/admin/participants', { members: [{ full_name: 'Solo Person', email: 'solo@example.com', phone: '9000000099' }] });
+  const uniq = Date.now().toString().slice(-7);
+  const soloMember = { full_name: 'Solo Person', email: `solo${uniq}@example.com`, phone: `98${uniq}` };
+  const solo = await admin.req('POST', '/api/admin/participants', { members: [soloMember] });
   assert.equal(solo.status, 200, JSON.stringify(solo.json));
+  const dup = await admin.req('POST', '/api/admin/participants', { members: [{ ...soloMember, full_name: 'Same Person Again' }] });
+  assert.equal(dup.status, 409, 'same email/phone is flagged as a duplicate');
+  assert.equal(dup.json.code, 'duplicate');
+  const forced = await admin.req('POST', '/api/admin/participants', { members: [{ ...soloMember, full_name: 'Twin' }], allow_duplicate: true });
+  assert.equal(forced.status, 200, 'an admin can add it anyway after checking');
   const csv = 'ID,NAMES,Team Name,E-MAIL\n9001,A,Trio,a@x.io\n,B,,b@x.io\n,C,,c@x.io\n';
   const pv = await admin.req('POST', '/api/admin/participants/import', { csvText: csv, mode: 'preview' });
   assert.equal((pv.json.totals as Record<string, number>).invalid, 1);

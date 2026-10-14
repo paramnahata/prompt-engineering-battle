@@ -142,16 +142,23 @@ export function emptySubmissionResult(): EvalResult {
   };
 }
 
-export async function evaluateSubmission(input: EvalInput, fetchImpl: typeof fetch = fetch): Promise<EvalResult> {
-  if (!input.prompt.trim()) return emptySubmissionResult();
-
+/**
+ * One JSON-mode Gemini call with timeout and error classification. Shared by
+ * the Round 1 and Round 2 evaluators. Returns the raw text plus metadata.
+ */
+export async function generateJson(
+  systemInstruction: string,
+  userMessage: string,
+  responseSchema: Record<string, unknown>,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ text: string; finishReason: unknown; usage: unknown }> {
   const apiKey = await getGeminiApiKey();
   if (!apiKey) throw new GeminiConfigError('No Gemini API key is configured. Add it in Admin → AI Judging.');
 
   const generationConfig: Record<string, unknown> = {
     temperature: 0,
     responseMimeType: 'application/json',
-    responseSchema: RESPONSE_SCHEMA,
+    responseSchema,
     maxOutputTokens: 512,
   };
   if (GEMINI_MODEL.startsWith('gemini-2.5-flash')) generationConfig.thinkingConfig = { thinkingBudget: 0 };
@@ -162,8 +169,8 @@ export async function evaluateSubmission(input: EvalInput, fetchImpl: typeof fet
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-        contents: [{ role: 'user', parts: [{ text: buildUserMessage(input) }] }],
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+        contents: [{ role: 'user', parts: [{ text: userMessage }] }],
         generationConfig,
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -188,11 +195,17 @@ export async function evaluateSubmission(input: EvalInput, fetchImpl: typeof fet
     const reason = candidate?.finishReason ?? data?.promptFeedback?.blockReason ?? 'unknown';
     throw new Error(`Gemini returned no content (finish reason: ${String(reason).slice(0, 40)})`);
   }
+  return { text, finishReason: candidate?.finishReason ?? null, usage: data?.usageMetadata ?? null };
+}
+
+export async function evaluateSubmission(input: EvalInput, fetchImpl: typeof fetch = fetch): Promise<EvalResult> {
+  if (!input.prompt.trim()) return emptySubmissionResult();
+  const { text, finishReason, usage } = await generateJson(SYSTEM_INSTRUCTION, buildUserMessage(input), RESPONSE_SCHEMA, fetchImpl);
   const scored = parseModelResponse(text);
   return {
     ...scored,
     model: GEMINI_MODEL,
     rubric_version: RUBRIC_VERSION,
-    raw: { finishReason: candidate?.finishReason ?? null, usage: data?.usageMetadata ?? null, response: scored },
+    raw: { finishReason, usage, response: scored },
   };
 }

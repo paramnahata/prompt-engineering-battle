@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { isSchemaMissingError, SETUP_REQUIRED_MESSAGE } from '@/lib/db-errors';
 
 /** Small helpers shared by route handlers. Kept free of Next server-only imports where possible. */
 
@@ -59,6 +60,16 @@ export async function readJson<T extends z.ZodTypeAny>(
 /** Logs a server-side failure without leaking details to the client. */
 export function serverError(context: string, err: unknown, message = 'Something went wrong. Please retry.') {
   const detail = err && typeof err === 'object' && 'message' in err ? String((err as { message: unknown }).message) : String(err);
+  if (isSchemaMissingError(err)) {
+    // The database is behind the code (migration not applied). Report it
+    // clearly instead of a generic 500; details stay in the server log.
+    console.error(`[${context}] database schema is missing objects:`, detail.slice(0, 300));
+    return jsonError(SETUP_REQUIRED_MESSAGE, 503, { code: 'setup_required' });
+  }
+  if (/Missing SUPABASE_URL or SUPABASE_SECRET_KEY/.test(detail)) {
+    console.error(`[${context}] server configuration: SUPABASE_URL / SUPABASE_SECRET_KEY not set`);
+    return jsonError('The server is not configured yet (database credentials missing).', 503, { code: 'not_configured' });
+  }
   console.error(`[${context}]`, detail.slice(0, 500));
   return jsonError(message, 500);
 }
@@ -82,3 +93,17 @@ export function safeNextPath(raw: string | null | undefined, fallback = '/organi
 }
 
 export const uuidSchema = z.string().uuid();
+
+/**
+ * Maps a `{ ok, status, code, message, ... }` result from a SQL function to a
+ * response: failures keep their HTTP status and code (plus any extra fields
+ * such as a preflight report); successes are returned as-is.
+ */
+export function rpcResponse(data: unknown, fallbackError = 'Action not allowed right now.') {
+  const d = (data ?? {}) as { ok?: boolean; status?: number; message?: string } & Record<string, unknown>;
+  if (!d.ok) {
+    const { ok: _ok, status, message, ...rest } = d;
+    return jsonError(message ?? fallbackError, typeof status === 'number' ? status : 409, rest);
+  }
+  return jsonOk(d);
+}

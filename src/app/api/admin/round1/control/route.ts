@@ -22,11 +22,14 @@ export async function POST(req: NextRequest) {
   const body = await readJson(req, bodySchema, 2048);
   if (!body.ok) return body.response;
   try {
-    const { data, error } = await supabaseAdmin().rpc('round1_control', {
-      p_action: body.data.action,
-      p_admin: auth.session.userId,
-      p_confirm: body.data.confirm ?? null,
-    });
+    // Start over goes through round1_start_over, which refuses once Round 2 has begun.
+    const { data, error } = body.data.action === 'reset'
+      ? await supabaseAdmin().rpc('round1_start_over', { p_admin: auth.session.userId, p_confirm: body.data.confirm ?? null })
+      : await supabaseAdmin().rpc('round1_control', {
+          p_action: body.data.action,
+          p_admin: auth.session.userId,
+          p_confirm: body.data.confirm ?? null,
+        });
     if (error) throw error;
     if (!data?.ok) return jsonError(data?.message ?? 'Action not allowed right now.', data?.status ?? 409, { code: data?.code });
     return jsonOk(data);

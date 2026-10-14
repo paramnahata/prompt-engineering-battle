@@ -35,7 +35,7 @@ export function PinSlips({ pins, onClose }: { pins: IssuedPin[]; onClose: () => 
         <div className={`mt-4 grid gap-3 ${pins.length > 1 ? 'sm:grid-cols-2' : ''}`}>
           {pins.map((p) => (
             <div key={p.entryId} className="pin-slip rounded-xl border border-white/15 p-4">
-              <div className="text-xs uppercase tracking-wider text-muted">Prompt Engineering Battle · Team login</div>
+              <div className="text-xs text-muted">Prompt Engineering Battle · Team login</div>
               <div className="mt-2 flex items-end justify-between gap-3">
                 <div><div className="text-xs text-muted">Entry number</div><div className="text-3xl font-bold tabular-nums">{p.entryNumber}</div></div>
                 <div className="text-right"><div className="text-xs text-muted">Team PIN</div><div className="font-mono text-3xl font-bold tracking-[0.25em]">{p.pin}</div></div>
@@ -78,11 +78,17 @@ export function EntryEditor({ entry, onClose, onSaved }: { entry: EntryVM | null
     setBusy(true);
     setError(null);
     try {
-      const payload = { team_name: teamName, members: members.map((m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v.trim()]))), ...(entry ? { disqualified, disqualified_reason: reason } : {}) };
-      const res = await fetch(entry ? `/api/admin/participants/${entry.id}` : '/api/admin/participants', {
+      const payload: Record<string, unknown> = { team_name: teamName, members: members.map((m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v.trim()]))), ...(entry ? { disqualified, disqualified_reason: reason } : {}) };
+      const send = () => fetch(entry ? `/api/admin/participants/${entry.id}` : '/api/admin/participants', {
         method: entry ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
-      const body = await res.json().catch(() => ({}));
+      let res = await send();
+      let body = await res.json().catch(() => ({}));
+      if (res.status === 409 && body.code === 'duplicate' && window.confirm(`${body.error}\n\nAdd this entry anyway?`)) {
+        payload.allow_duplicate = true;
+        res = await send();
+        body = await res.json().catch(() => ({}));
+      }
       if (!res.ok) throw new Error(body.error ?? 'Could not save.');
       onSaved(entry ? `Entry ${entry.entry_number} updated.` : `Entry ${body.entryNumber} created — issue its PIN next.`);
     } catch (e) {

@@ -15,14 +15,15 @@ export async function GET() {
       db.from('entries').select('id', { count: 'exact', head: true }),
       db.from('entries').select('id', { count: 'exact', head: true }).eq('present', true),
       db.from('submissions').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),
-      db.from('rounds').select('round_number, status, round_end_at').eq('round_number', 1).maybeSingle(),
-      db.from('announcements').select('id, message').eq('active', true).order('created_at', { ascending: false }).limit(3),
+      db.from('rounds').select('round_number, status, round_end_at, paused_at').order('round_number'),
+      db.from('announcements').select('id, title, message').eq('active', true).eq('audience', 'all').order('created_at', { ascending: false }).limit(3),
     ]);
     return jsonOk({
       registered: registered.count ?? 0,
       present: present.count ?? 0,
       submitted: submitted.count ?? 0,
-      round: round.data ?? null,
+      round: (round.data ?? []).find((r) => r.round_number === 1) ?? null,
+      round2: (round.data ?? []).find((r) => r.round_number === 2) ?? null,
       announcements: announcements.data ?? [],
       serverNow: new Date().toISOString(),
     });

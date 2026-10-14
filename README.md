@@ -10,9 +10,12 @@ entries.
 
 ## Status
 
-Round 1 (registration, check-in, per-team PINs, challenge pool import with
-difficulty rules, timed challenges, autosave, AI evaluation, results, global
-competition reset) is implemented and tested. Round 2 / jury scoring is not built yet.
+Implemented and tested: registration and check-in, per-team PINs, challenge
+pool import with difficulty rules, Round 1 (timed challenges, autosave, AI
+evaluation, results), an organizer-configured Round 2 (problems, optional
+surprise twist, jury questions and scoring, optional AI score, final results),
+results publication to students, targeted announcements, CSV exports, a
+deployment health check and a global competition reset with preview.
 See **[docs/EVENT_READINESS.md](docs/EVENT_READINESS.md)** for the audit,
 security review, authorization matrix, test and load-test results, the
 deployment runbook and the go/no-go checklist.
@@ -45,11 +48,14 @@ npm run dev
 ## Supabase setup
 
 1. Create a project at supabase.com.
-2. Apply `supabase/migrations/0001` … `0005` in order (SQL editor or
+2. Apply `supabase/migrations/0001` … `0006` in order (SQL editor or
    `supabase db push`). `0003` is a no-op on the original production
    database; `0004` adds sessions, rate limits and the competition SQL
    functions; `0005` adds team PINs, the challenge pool workflow and the
-   global reset (all callable only with the service-role/secret key).
+   global reset; `0006` adds Round 2, results publication, announcement
+   targeting and `app_schema_status()` (all callable only with the
+   service-role/secret key). `GET /api/health` reports whether the database
+   the deployment points at has every migration.
    Rollback scripts are in `supabase/rollback/`.
 3. Set `SUPABASE_URL` and `SUPABASE_SECRET_KEY` (server-only). The browser
    never talks to Supabase directly.

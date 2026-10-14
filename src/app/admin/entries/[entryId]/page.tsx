@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export default async function EntryDetailPage({ params }: { params: { entryId: string } }) {
   const session = await requirePageRole(['admin'], '/admin/entries');
   return (
-    <OrganizerShell role={session.role} back={{ href: '/admin/entries', label: 'Entries' }}>
+    <OrganizerShell role={session.role} userId={session.userId}>
       <EntryDetailClient entryId={params.entryId} />
     </OrganizerShell>
   );

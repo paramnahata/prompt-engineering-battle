@@ -11,6 +11,7 @@ interface DisplayData {
   present: number;
   submitted: number;
   round: { round_number: number; status: string; round_end_at: string | null } | null;
+  round2: { round_number: number; status: string; round_end_at: string | null } | null;
   announcements: { id: string; message: string }[];
   serverNow: string;
 }
@@ -37,7 +38,8 @@ export default function DisplayScreen() {
     return () => clearInterval(t);
   }, []);
 
-  const round = data?.round;
+  // Once Round 2 has started, the projector follows Round 2.
+  const round = data?.round2 && data.round2.status !== 'not_started' ? data.round2 : data?.round;
   const secondsLeft = useServerCountdown({
     endAtIso: round?.status === 'running' ? round.round_end_at : null,
     serverNowIso: data?.serverNow ?? null,
@@ -47,21 +49,21 @@ export default function DisplayScreen() {
     <div className="flex min-h-screen flex-col gap-8 bg-background p-8 text-foreground">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="bg-gradient-to-r from-accent via-accent-blue to-accent-cyan bg-clip-text text-4xl font-bold tracking-tight text-transparent">PROMPT ENGINEERING BATTLE</h1>
-          <p className="mt-1 text-muted">AI Prompt Optimization &amp; Problem-Solving Challenge</p>
+          <h1 className="font-display text-4xl font-semibold text-white" style={{ fontVariationSettings: "'wdth' 84" }}>Prompt Engineering Battle</h1>
+          <p className="mt-1 text-muted">SWAYAMBHU 2026</p>
         </div>
         <div className="text-right">
-          <div className="font-mono text-3xl">{clock}</div>
-          <div className="text-xs uppercase tracking-widest text-muted">Live</div>
+          <div className="font-display text-3xl font-semibold tabular">{clock}</div>
+          <div className="text-xs text-muted">Live</div>
         </div>
       </header>
 
       <section className="flex flex-1 flex-col items-center justify-center gap-4">
         {round ? (
           <>
-            <div className="text-sm uppercase tracking-[0.3em] text-muted">Round {round.round_number} — {STATUS_LABEL[round.status] ?? round.status}</div>
+            <div className="text-sm text-muted">Round {round.round_number} — {STATUS_LABEL[round.status] ?? round.status}</div>
             {round.status === 'running' && secondsLeft !== null ? (
-              <div className={`font-mono text-[8rem] font-bold leading-none tracking-tight sm:text-[9rem] ${secondsLeft < 60 ? 'animate-pulse-glow text-red-400' : ''}`}>{formatMMSS(secondsLeft)}</div>
+              <div className={`font-display text-[9rem] font-semibold leading-none tabular sm:text-[11rem] ${secondsLeft < 60 ? 'animate-pulse-glow text-rose-300' : 'text-white'}`}>{formatMMSS(secondsLeft)}</div>
             ) : (
               <div className="text-5xl font-semibold text-muted">
                 {round.status === 'not_started' && 'Waiting to begin…'}
@@ -80,14 +82,14 @@ export default function DisplayScreen() {
       <section className="grid grid-cols-3 gap-4">
         {[['Registered', data?.registered], ['Checked in', data?.present], ['Answers submitted', data?.submitted]].map(([label, value]) => (
           <div key={label as string} className="peb-card py-6 text-center">
-            <div className="text-4xl font-bold text-accent-cyan">{value ?? '—'}</div>
-            <div className="mt-1 text-xs uppercase tracking-widest text-muted">{label}</div>
+            <div className="font-display text-5xl font-semibold tabular text-white">{value ?? '—'}</div>
+            <div className="mt-1 text-xs text-muted">{label}</div>
           </div>
         ))}
       </section>
 
       <footer className="peb-card overflow-hidden text-center text-lg">
-        {data?.announcements.length ? `📢 ${data.announcements[0]?.message}` : <span className="text-sm text-muted">No announcements</span>}
+        {data?.announcements.length ? data.announcements[0]?.message : <span className="text-sm text-muted">No announcements</span>}
       </footer>
     </div>
   );

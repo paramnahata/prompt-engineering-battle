@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export default async function RegistrationDeskPage() {
   const session = await requirePageRole(['admin', 'volunteer'], '/admin/attendance');
   return (
-    <OrganizerShell role={session.role} wide>
+    <OrganizerShell role={session.role} userId={session.userId} wide>
       <RegistrationDeskClient canImport={session.role === 'admin'} />
     </OrganizerShell>
   );

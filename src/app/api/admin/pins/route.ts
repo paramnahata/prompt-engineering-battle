@@ -4,6 +4,7 @@ import { requireApiRole } from '@/lib/auth/session';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { generatePin, hashPin } from '@/lib/auth/pin';
 import { jsonError, jsonOk, readJson, serverError } from '@/lib/http';
+import { limitAction } from '@/lib/ops/rate-limit';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -30,6 +31,8 @@ export async function POST(req: NextRequest) {
   if (!auth.ok) return auth.response;
 
   try {
+    const limited = await limitAction(`pins:${auth.session.userId}`, 40, 300);
+    if (limited) return limited;
     const db = supabaseAdmin();
     const query = db.from('entries').select('id, entry_number, team_name, team_members(member_position, full_name)').order('entry_number').limit(2000);
     const { data: targets, error } = body.data.action === 'issue_missing'

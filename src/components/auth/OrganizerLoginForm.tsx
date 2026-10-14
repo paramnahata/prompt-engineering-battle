@@ -1,9 +1,11 @@
 'use client';
 
-import Link from 'next/link';
 import { useState } from 'react';
+import AuthFrame from '@/components/auth/AuthFrame';
+import { Alert } from '@/components/ui/Feedback';
+import { Button } from '@/components/ui/Button';
 
-export default function OrganizerLoginForm({ next }: { next: string }) {
+export default function OrganizerLoginForm({ next, setupIssue }: { next: string; setupIssue?: string | null }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -16,10 +18,7 @@ export default function OrganizerLoginForm({ next }: { next: string }) {
     setLoading(true);
     try {
       const res = await fetch('/api/organizer/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store',
-        body: JSON.stringify({ email, password }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', body: JSON.stringify({ email, password }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -27,8 +26,8 @@ export default function OrganizerLoginForm({ next }: { next: string }) {
         setLoading(false);
         return;
       }
-      // `next` is already sanitised server-side to a same-site path.
-      window.location.replace(next);
+      // `next` is sanitised server-side to a same-site path; otherwise go to the role's home.
+      window.location.replace(next || body.home || '/organizer/hub');
     } catch {
       setError('Unable to sign in. Check your connection and try again.');
       setLoading(false);
@@ -36,18 +35,27 @@ export default function OrganizerLoginForm({ next }: { next: string }) {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
-      <form onSubmit={submit} className="peb-card flex w-full max-w-sm flex-col gap-4" noValidate>
-        <Link href="/" className="-mt-1 text-xs text-slate-400 hover:text-white">← Home</Link>
-        <h1 className="text-center text-xl font-semibold">Organizer Login</h1>
-        <p className="-mt-2 text-center text-xs text-muted">Admin, Registration Desk and Judge accounts sign in here.</p>
-        <label className="text-xs font-semibold text-slate-300" htmlFor="org-email">Email</label>
-        <input id="org-email" className="-mt-2 w-full rounded-lg border border-border bg-surface p-2.5 focus:outline-none focus:ring-1 focus:ring-accent" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <label className="text-xs font-semibold text-slate-300" htmlFor="org-password">Password</label>
-        <input id="org-password" className="-mt-2 w-full rounded-lg border border-border bg-surface p-2.5 focus:outline-none focus:ring-1 focus:ring-accent" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
-        <button className="peb-btn-primary" disabled={loading || !email || !password}>{loading ? 'Signing in…' : 'Sign in'}</button>
+    <AuthFrame aside={
+      <div>
+        <h1 className="font-display text-[3.2rem] font-semibold leading-[1.04] text-white" style={{ fontVariationSettings: "'wdth' 84" }}>Run the battle from one console.</h1>
+        <p className="mt-5 max-w-md text-lg leading-8 text-slate-300">Admins, registration desk volunteers and judges sign in here. Each role sees only the tools it needs.</p>
+      </div>
+    }>
+      <h2 className="text-2xl font-semibold text-white">Organizer sign in</h2>
+      <p className="mt-1 text-sm text-muted">Use the email and password your admin gave you.</p>
+      {setupIssue && <Alert tone="error" className="mt-5">{setupIssue}</Alert>}
+      <form onSubmit={submit} className="mt-6 space-y-5" noValidate>
+        <div>
+          <label className="peb-label" htmlFor="org-email">Email</label>
+          <input id="org-email" className="peb-input py-3" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+        </div>
+        <div>
+          <label className="peb-label" htmlFor="org-password">Password</label>
+          <input id="org-password" className="peb-input py-3" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        </div>
+        {error && <Alert tone="error">{error}</Alert>}
+        <Button type="submit" variant="primary" className="w-full" loading={loading} disabled={!email || !password}>{loading ? 'Signing in…' : 'Sign in'}</Button>
       </form>
-    </main>
+    </AuthFrame>
   );
 }

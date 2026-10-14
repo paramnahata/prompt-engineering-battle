@@ -10,6 +10,8 @@ ADMIN=$(q "select id from admins where email='admin@staging.local'")
 
 echo "== reset staging round state"
 q "select round1_control('stop', '$ADMIN', null)" >/dev/null
+q "select round2_control('stop', '$ADMIN', null)" >/dev/null
+q "update entries set present = true where registration_id like 'STG-REG-%'"
 q "select competition_reset('$ADMIN', 'RESET COMPETITION')" >/dev/null
 q "update auth_sessions set ended_at = now(), end_reason = 'load_reset' where ended_at is null; delete from rate_limits;"
 curl -s 127.0.0.1:54340/reset >/dev/null
@@ -18,6 +20,10 @@ curl -s 127.0.0.1:54340/reset >/dev/null
 
 echo "== scenario 1: login burst ($ENTRIES simultaneous)"
 "$K6" run --quiet --summary-export "$OUT/login-burst.json" -e ENTRIES="$ENTRIES" -e EVENT_SECRET="$EVENT_SECRET" "$HERE/login-burst.js" | tee "$OUT/login-burst.txt" | tail -25 || true
+q "update auth_sessions set ended_at = now(), end_reason = 'load_reset' where ended_at is null; delete from rate_limits;"
+
+echo "== scenario 1b: waiting room (all teams polling their dashboard)"
+"$K6" run --quiet --summary-export "$OUT/waiting-room.json" -e ENTRIES="$ENTRIES" -e EVENT_SECRET="$EVENT_SECRET" "$HERE/waiting-room.js" | tee "$OUT/waiting-room.txt" | tail -22 || true
 q "update auth_sessions set ended_at = now(), end_reason = 'load_reset' where ended_at is null; delete from rate_limits;"
 
 echo "== start round (load-test config: 200s challenge timer so all timers expire together mid-test)"

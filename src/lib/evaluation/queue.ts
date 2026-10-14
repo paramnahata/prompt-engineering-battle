@@ -135,3 +135,65 @@ export async function processEvaluationQueue(options: { timeBudgetMs?: number; c
   }
   return totals;
 }
+
+// ---------------------------------------------------------------------
+// Round 2 queue (same claiming / retry semantics as Round 1)
+// ---------------------------------------------------------------------
+interface ClaimedRound2Job { id: string; entry_id: string; retry_count: number }
+
+async function processRound2One(job: ClaimedRound2Job): Promise<'completed' | 'retry' | 'failed'> {
+  const db = supabaseAdmin();
+  try {
+    const [{ data: state, error: sErr }, { data: asg }] = await Promise.all([
+      db.from('round2_states').select('initial_prompt, initial_output, final_prompt, final_output, rationale, twist_snapshot').eq('entry_id', job.entry_id).single(),
+      db.from('round2_assignments').select('problem_snapshot').eq('entry_id', job.entry_id).maybeSingle(),
+    ]);
+    if (sErr || !state) throw new Error('Round 2 work not found');
+    const { evaluateRound2, ROUND2_RUBRIC_VERSION } = await import('@/lib/gemini/round2');
+    const r = await evaluateRound2({
+      problem: (asg?.problem_snapshot ?? null) as Record<string, unknown> | null,
+      twist: (state.twist_snapshot ?? null) as Record<string, unknown> | null,
+      initialPrompt: state.initial_prompt ?? '', initialOutput: state.initial_output ?? '',
+      finalPrompt: state.final_prompt ?? '', finalOutput: state.final_output ?? '', rationale: state.rationale ?? '',
+    });
+    const { error: upErr } = await db.from('round2_ai_evaluations').upsert({
+      entry_id: job.entry_id,
+      problem_understanding: r.problem_understanding, prompt_structure: r.prompt_structure, context_specificity: r.context_specificity,
+      creativity: r.creativity, constraint_handling: r.constraint_handling, output_quality: r.output_quality,
+      ai_subtotal: r.ai_subtotal, summary: r.summary, raw_model_response: { ...r.raw, flags: r.flags },
+      model: r.model, rubric_version: ROUND2_RUBRIC_VERSION, evaluated_at: new Date().toISOString(),
+    }, { onConflict: 'entry_id' });
+    if (upErr) throw new Error('Could not store the evaluation');
+    await db.from('round2_eval_jobs').update({ status: 'completed', evaluated_at: new Date().toISOString(), last_error: null })
+      .eq('id', job.id).eq('status', 'processing');
+    return 'completed';
+  } catch (err) {
+    const nextRetry = job.retry_count + 1;
+    const kind = err instanceof GeminiRateLimitError ? 'rate_limit' : err instanceof GeminiTransientError ? 'transient' : null;
+    const retryable = kind !== null && nextRetry < MAX_RETRIES && !(err instanceof GeminiConfigError);
+    await db.from('round2_eval_jobs').update({
+      status: retryable ? 'queued' : 'failed', retry_count: nextRetry, last_error: describeError(err),
+      next_attempt_at: new Date(Date.now() + (kind ? backoffSeconds(kind, job.retry_count) : 0) * 1000).toISOString(),
+    }).eq('id', job.id).eq('status', 'processing');
+    return retryable ? 'retry' : 'failed';
+  }
+}
+
+export async function processRound2Queue(options: { timeBudgetMs?: number; concurrency?: number } = {}) {
+  const timeBudgetMs = options.timeBudgetMs ?? 40_000;
+  const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
+  const started = Date.now();
+  const totals = { claimed: 0, completed: 0, retry: 0, failed: 0 };
+  const db = supabaseAdmin();
+  while (Date.now() - started < timeBudgetMs - 26_000 || totals.claimed === 0) {
+    const { data: jobs, error } = await db.rpc('claim_round2_eval_jobs', { p_limit: concurrency, p_max_retries: MAX_RETRIES });
+    if (error) throw error;
+    const claimed = (jobs ?? []) as ClaimedRound2Job[];
+    if (claimed.length === 0) break;
+    totals.claimed += claimed.length;
+    const outcomes = await Promise.all(claimed.map(processRound2One));
+    for (const o of outcomes) totals[o] += 1;
+    if (outcomes.every((o) => o === 'retry')) break;
+  }
+  return totals;
+}

@@ -201,7 +201,7 @@ function PoolTab({ refreshKey, onChanged }: { refreshKey: number; onChanged: () 
               <tr key={r.id} className={`border-t border-white/5 ${r.active && r.pool_status !== 'archived' ? '' : 'opacity-50'}`}>
                 <td className="p-3"><input type="checkbox" aria-label={`Select ${r.challenge_code}`} checked={selected.has(r.id)} disabled={r.pool_status === 'archived'}
                   onChange={() => setSelected((s) => { const n = new Set(s); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} /></td>
-                <td className="whitespace-nowrap p-3 font-mono text-xs">{r.challenge_code}{r.common_slot && <span className="ml-2 rounded bg-cyan-300/15 px-1.5 py-0.5 text-[10px] text-cyan-100">Common {r.common_slot === 1 ? 'A' : 'B'}</span>}</td>
+                <td className="whitespace-nowrap p-3 font-mono text-xs">{r.challenge_code}{r.common_slot && <span className="ml-2 rounded bg-cyan-300/15 px-1.5 py-0.5 text-xs text-cyan-100">Common {r.common_slot === 1 ? 'A' : 'B'}</span>}</td>
                 <td className="p-3">{r.title}</td>
                 <td className="p-3 text-xs text-muted">{r.category ?? '—'}</td>
                 <td className="p-3"><span className={`rounded-full border px-2 py-0.5 text-xs capitalize ${DIFF_STYLE[r.difficulty]}`}>{r.difficulty}</span></td>
@@ -434,7 +434,7 @@ function ImportTab({ onPublished }: { onPublished: () => void }) {
           Excel (.xlsx, every sheet is read) or CSV. Columns like <code>PS ID</code>, <code>Category</code>, <code>Difficulty</code>, <code>Challenge Prompt</code>,
           <code> Expected Output</code>, <code>Evaluation Criteria</code> are detected automatically; summary sheets are skipped. Nothing changes until you publish.
         </p>
-        <input type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="mt-3 text-sm" aria-label="Choose problem-statement file"
+        <input type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="mt-3 text-sm text-slate-300 file:mr-3 file:rounded-md file:border file:border-line file:bg-raised file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-slate-800" aria-label="Choose problem-statement file"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void onFile(f); e.target.value = ''; }} />
         {busy === 'reading' && <p className="mt-2 text-xs text-muted">Reading workbook…</p>}
         {busy === 'preview' && <p className="mt-2 text-xs text-muted">Checking against the live pool…</p>}
@@ -513,7 +513,7 @@ function ImportTab({ onPublished }: { onPublished: () => void }) {
               <tbody>
                 {items.slice(0, 700).map((i) => (
                   <tr key={i.code} className="border-t border-white/5 align-top">
-                    <td className="whitespace-nowrap p-2 font-mono">{i.code}<div className="text-[10px] text-muted">{i.source_ref}</div></td>
+                    <td className="whitespace-nowrap p-2 font-mono">{i.code}<div className="text-xs text-muted">{i.source_ref}</div></td>
                     <td className="p-2">{i.category ?? '—'}</td>
                     <td className="p-2"><span className={`rounded-full border px-2 py-0.5 capitalize ${DIFF_STYLE[i.difficulty]}`}>{i.difficulty}</span></td>
                     <td className="p-2 text-muted">{i.statement}{i.statement.length >= 220 ? '…' : ''}</td>
@@ -680,7 +680,7 @@ function CommonPicker({ slot, current, onChanged }: { slot: 1 | 2; current?: Pre
   const label = slot === 1 ? 'A' : 'B';
   return (
     <div className={`rounded-2xl border p-4 ${current?.chosen && current.eligible ? 'border-cyan-300/30 bg-cyan-300/[0.05]' : 'border-amber-300/30 bg-amber-400/[0.06]'}`}>
-      <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Common {label} — challenge {slot} for every team</div>
+      <div className="text-xs font-semibold text-slate-400">Common {label} — challenge {slot} for every team</div>
       {current?.chosen ? (
         <div className="mt-2">
           <span className="font-mono text-sm text-cyan-100">{current.code}</span> <span className="text-sm">{current.title}</span>

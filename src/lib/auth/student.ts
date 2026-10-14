@@ -20,6 +20,7 @@ export function studentClaims(): { ok: true; claims: SessionClaims } | { ok: fal
 export function rpcFailure(data: { status?: number; code?: string } & Record<string, unknown>) {
   const messages: Record<string, string> = {
     session: 'Your session has ended. Please sign in again.',
+    session_invalid: 'Your session has ended. Please sign in again.',
     not_found: 'That challenge was not found.',
     forbidden: 'That challenge does not belong to your entry.',
     round_paused: 'Round 1 is paused. Your work is safe — wait for the organizer to resume.',
@@ -32,5 +33,6 @@ export function rpcFailure(data: { status?: number; code?: string } & Record<str
     char_limit: `AI output exceeds the ${data.limit ?? ''}-character limit for this challenge.`,
   };
   const status = typeof data.status === 'number' ? data.status : 400;
-  return jsonError(messages[data.code ?? ''] ?? 'Request failed.', status, { ...data, ok: false });
+  const fallback = typeof data.message === 'string' ? data.message : 'Request failed.';
+  return jsonError(messages[data.code ?? ''] ?? fallback, status, { ...data, ok: false });
 }

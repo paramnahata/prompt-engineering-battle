@@ -46,6 +46,21 @@ export async function POST(req: NextRequest) {
         gender: m.gender ?? '', college: m.college ?? '', city: m.city ?? '', branch: m.branch ?? '', study_year: m.study_year ?? '', source_row: null,
       })),
     }];
+    // Guard against registering the same person twice (same email or phone as an existing member).
+    if (!body.data.allow_duplicate) {
+      const emails = payload[0]!.members.map((m) => m.email).filter(Boolean);
+      const phones = payload[0]!.members.map((m) => m.phone).filter((p) => p.replace(/\D/g, '').length >= 7);
+      const db = supabaseAdmin();
+      const [byEmail, byPhone] = await Promise.all([
+        emails.length ? db.from('team_members').select('email, entry:entries(entry_number)').in('email', emails).limit(5) : Promise.resolve({ data: [] as unknown[] }),
+        phones.length ? db.from('team_members').select('phone, entry:entries(entry_number)').in('phone', phones).limit(5) : Promise.resolve({ data: [] as unknown[] }),
+      ]);
+      const hits = [...(byEmail.data ?? []), ...(byPhone.data ?? [])] as { entry: { entry_number: number } | { entry_number: number }[] | null }[];
+      if (hits.length) {
+        const numbers = [...new Set(hits.map((h) => (Array.isArray(h.entry) ? h.entry[0] : h.entry)?.entry_number).filter(Boolean))];
+        return jsonError(`A participant with the same email or phone is already registered (entry ${numbers.join(', ')}). Check the desk before adding a duplicate.`, 409, { code: 'duplicate', entries: numbers });
+      }
+    }
     const { data, error } = await supabaseAdmin().rpc('import_participants', { p_entries: payload, p_admin: auth.session.userId });
     if (error) throw error;
     return jsonOk({ ok: true, entryNumber: data?.firstEntryNumber });

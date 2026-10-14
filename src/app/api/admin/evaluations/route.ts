@@ -4,6 +4,7 @@ import { requireApiRole } from '@/lib/auth/session';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { processEvaluationQueue } from '@/lib/evaluation/queue';
 import { jsonOk, readJson, serverError } from '@/lib/http';
+import { limitAction } from '@/lib/ops/rate-limit';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -45,6 +46,8 @@ export async function POST(req: NextRequest) {
   const body = await readJson(req, postSchema, 512);
   if (!body.ok) return body.response;
   try {
+    const limited = await limitAction(`eval-run:${auth.session.userId}`, 60, 300);
+    if (limited) return limited;
     const db = supabaseAdmin();
     if (body.data.action === 'retry_failed') {
       const { data, error } = await db.from('evaluation_jobs')
