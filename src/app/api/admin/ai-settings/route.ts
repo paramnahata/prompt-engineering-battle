@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireRole } from '@/lib/auth/session';
+import { requireApiRole } from '@/lib/auth/session';
+import { GEMINI_MODEL } from '@/lib/gemini/evaluator';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { hasStoredGeminiApiKey, removeGeminiApiKey, saveGeminiApiKey } from '@/lib/gemini/key-store';
 
@@ -12,12 +13,10 @@ function sameOrigin(req: NextRequest): boolean {
   const origin = req.headers.get('origin');
   return !origin || new URL(origin).origin === req.nextUrl.origin;
 }
-function unauthorized() {
-  return NextResponse.json({ error: 'Admin access required.' }, { status: 401 });
-}
 
 export async function GET() {
-  if (!requireRole('admin')) return unauthorized();
+  const auth = await requireApiRole(['admin']);
+  if (!auth.ok) return auth.response;
   try {
     const environmentConfigured = Boolean(process.env.GEMINI_API_KEY?.trim());
     const savedConfigured = environmentConfigured ? false : await hasStoredGeminiApiKey();
@@ -25,6 +24,7 @@ export async function GET() {
       configured: environmentConfigured || savedConfigured,
       source: environmentConfigured ? 'environment' : savedConfigured ? 'admin-panel' : 'none',
       environmentOverride: environmentConfigured,
+      model: GEMINI_MODEL,
     });
   } catch {
     return NextResponse.json({ error: 'Could not read AI configuration.' }, { status: 500 });
@@ -32,8 +32,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const session = requireRole('admin');
-  if (!session) return unauthorized();
+  const auth = await requireApiRole(['admin']);
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
   if (!sameOrigin(req)) return NextResponse.json({ error: 'Cross-origin request blocked.' }, { status: 403 });
   if (process.env.GEMINI_API_KEY?.trim()) {
     return NextResponse.json({ error: 'GEMINI_API_KEY is set in Vercel. Remove that environment variable to use the admin-panel key.' }, { status: 409 });
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: 'Enter a valid Gemini API key.' }, { status: 400 });
   const apiKey = parsed.data.apiKey.trim();
   try {
-    const testResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {
+    const testResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Reply with OK.' }] }], generationConfig: { maxOutputTokens: 5, temperature: 0 } }),
@@ -72,8 +73,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = requireRole('admin');
-  if (!session) return unauthorized();
+  const auth = await requireApiRole(['admin']);
+  if (!auth.ok) return auth.response;
+  const session = auth.session;
   if (!sameOrigin(req)) return NextResponse.json({ error: 'Cross-origin request blocked.' }, { status: 403 });
   if (process.env.GEMINI_API_KEY?.trim()) {
     return NextResponse.json({ error: 'A deployment environment key is active and cannot be removed here.' }, { status: 409 });

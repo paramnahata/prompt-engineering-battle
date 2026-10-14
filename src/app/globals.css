@@ -5,68 +5,95 @@
 @layer base {
   html {
     color-scheme: dark;
-    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
   }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background font-sans text-[15px] leading-relaxed text-foreground antialiased;
     min-height: 100vh;
-    background-color: #070b17;
+    background-color: #0e0e13;
     background-image:
-      radial-gradient(ellipse at 12% 0%, rgba(124, 58, 237, 0.2), transparent 34%),
-      radial-gradient(ellipse at 92% 12%, rgba(34, 211, 238, 0.11), transparent 32%),
-      linear-gradient(180deg, rgba(7, 11, 23, 0.1), #070b17 75%);
+      radial-gradient(60rem 28rem at 8% -6%, rgba(139, 108, 255, 0.13), transparent 60%),
+      radial-gradient(48rem 24rem at 100% 0%, rgba(61, 126, 255, 0.08), transparent 60%);
     background-attachment: fixed;
+    font-feature-settings: 'ss01', 'cv11';
   }
-  ::selection {
-    background: rgba(139, 92, 246, 0.45);
-    color: white;
+  h1, h2, h3 {
+    @apply font-display tracking-tight;
+    font-variation-settings: 'wdth' 92;
   }
-  input, textarea, button {
-    font: inherit;
+  ::selection { background: rgba(139, 108, 255, 0.45); color: white; }
+  input, textarea, button, select { font: inherit; }
+  :focus-visible {
+    outline: 2px solid #8db6ff;
+    outline-offset: 2px;
+    border-radius: 6px;
   }
-  button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible {
-    outline: 2px solid rgba(103, 232, 249,  0.8);
-    outline-offset: 3px;
-  }
+  .tabular { font-variant-numeric: tabular-nums; }
 }
 
 @layer components {
+  /* Panels */
   .peb-card {
-    @apply rounded-2xl border p-5 transition-colors;
-    background: linear-gradient(145deg, rgba(255,255,255,0.055), rgba(255,255,255,0.025));
-    border-color: rgba(255,255,255,0.1);
-    box-shadow: 0 12px 40px rgba(0,0,0,0.12);
+    @apply rounded-2xl border border-line bg-surface/90 p-5 shadow-panel;
+  }
+  .peb-panel { @apply rounded-2xl border border-line bg-surface/90 shadow-panel; }
+  .peb-inset { @apply rounded-xl border border-line/70 bg-background/60; }
+
+  /* Buttons */
+  .peb-btn {
+    @apply inline-flex min-h-[2.5rem] select-none items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 text-sm font-semibold transition-[background,color,border-color,box-shadow,filter] duration-150 disabled:cursor-not-allowed disabled:opacity-45;
   }
   .peb-btn-primary {
-    @apply inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-semibold text-white transition;
-    background: linear-gradient(110deg, #7c3aed, #4f46e5 52%, #0891b2);
-    box-shadow: 0 8px 24px rgba(79,70,229,0.22);
+    @apply peb-btn text-white shadow-glow;
+    background-image: linear-gradient(115deg, #8b6cff 0%, #5b6dff 50%, #3d7eff 100%);
   }
-  .peb-btn-primary:hover {
-    filter: brightness(1.1);
-    transform: translateY(-1px);
-  }
-  .peb-btn-primary:disabled {
-    @apply cursor-not-allowed opacity-50;
-    filter: grayscale(0.25);
-    transform: none;
-    box-shadow: none;
-  }
+  .peb-btn-primary:not(:disabled):hover { filter: brightness(1.08) saturate(1.05); }
+  .peb-btn-primary:disabled { box-shadow: none; filter: grayscale(0.35); }
   .peb-btn-secondary {
-    @apply inline-flex items-center justify-center rounded-xl border px-5 py-3 text-sm font-semibold transition;
-    background: rgba(255,255,255,0.045);
-    border-color: rgba(255,255,255,0.12);
+    @apply peb-btn border border-line bg-raised text-foreground hover:border-slate-600 hover:bg-slate-800;
   }
-  .peb-btn-secondary:hover {
-    background: rgba(255,255,255,0.08);
+  .peb-btn-ghost { @apply peb-btn text-slate-300 hover:bg-white/[0.05] hover:text-white; }
+  .peb-btn-danger {
+    @apply peb-btn border border-rose-500/40 bg-rose-500/15 text-rose-100 hover:border-rose-400/60 hover:bg-rose-500/25;
+  }
+  .peb-btn-sm { @apply min-h-[2rem] rounded-md px-3 text-xs; }
+
+  /* Form controls */
+  .peb-input {
+    @apply w-full rounded-lg border border-line bg-background/70 px-3 py-2.5 text-sm text-foreground placeholder:text-faint transition-colors hover:border-slate-600 focus:border-violet-400/70 focus:outline-none focus:ring-2 focus:ring-violet-500/20 disabled:opacity-60;
+  }
+  .peb-label { @apply mb-1.5 block text-xs font-medium text-slate-300; }
+  .peb-help { @apply mt-1.5 text-xs text-muted; }
+
+  /* Tables */
+  .peb-table { @apply w-full border-collapse text-left text-sm; }
+  .peb-table thead th { @apply sticky top-0 z-[1] border-b border-line bg-raised/95 px-3 py-2.5 text-xs font-medium text-muted backdrop-blur; }
+  .peb-table tbody td { @apply border-b border-line/60 px-3 py-2.5 align-top; }
+  .peb-table tbody tr:hover td { @apply bg-white/[0.02]; }
+
+  .peb-skeleton {
+    @apply rounded-md;
+    background: linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.09) 50%, rgba(255,255,255,0.04) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s linear infinite;
+  }
+  .peb-gradient-text {
+    background-image: linear-gradient(115deg, #b7a4ff 0%, #8db6ff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
+}
+
+@media print {
+  body { background: white !important; color: black !important; }
 }

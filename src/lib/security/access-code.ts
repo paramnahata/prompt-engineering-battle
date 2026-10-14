@@ -1,9 +1,20 @@
 import crypto from 'node:crypto';
-import { supabaseAdmin } from '@/lib/supabase/server';
 
-const ROTATE_SECONDS = 120;
+/**
+ * Rotating 4-digit event access code, derived from EVENT_SECRET and the
+ * current 2-minute window (server clock). It proves physical presence: it
+ * is shown only on organizer-authenticated screens (projector / desk), and
+ * the endpoint that serves it requires an organizer session.
+ *
+ * The code alone is NOT the security boundary: student login is also
+ * rate-limited per IP and per entry, requires the entry to be checked in by
+ * a volunteer, and allows only one live device per entry.
+ */
 
-/** 4-digit code derived from EVENT_SECRET + the current rotation window. */
+export const ROTATE_SECONDS = 120;
+/** A code typed just before rotation is still accepted for this long. */
+export const GRACE_SECONDS = 20;
+
 function deriveCode(windowIndex: number): string {
   const secret = process.env.EVENT_SECRET;
   if (!secret) throw new Error('Missing EVENT_SECRET environment variable.');
@@ -12,34 +23,26 @@ function deriveCode(windowIndex: number): string {
   return num.toString().padStart(4, '0');
 }
 
-function currentWindowIndex(nowMs = Date.now()): number {
+function windowIndexAt(nowMs: number): number {
   return Math.floor(nowMs / (ROTATE_SECONDS * 1000));
 }
 
-/** Returns the currently valid code + when it rotates next, using server time. */
-export function getCurrentAccessCode() {
-  const now = Date.now();
-  const windowIndex = currentWindowIndex(now);
-  const code = deriveCode(windowIndex);
-  const rotatesAt = (windowIndex + 1) * ROTATE_SECONDS * 1000;
-  return { code, rotatesAt, serverNow: now };
+export function getCurrentAccessCode(nowMs = Date.now()) {
+  const windowIndex = windowIndexAt(nowMs);
+  return { code: deriveCode(windowIndex), rotatesAt: (windowIndex + 1) * ROTATE_SECONDS * 1000, serverNow: nowMs };
 }
 
-/** Validates a submitted code against the CURRENT window only — an old code stops working the instant it rotates. */
-export function isAccessCodeValid(submitted: string): boolean {
-  const now = Date.now();
-  const windowIndex = currentWindowIndex(now);
-  return submitted.trim() === deriveCode(windowIndex);
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
 }
 
-/** Optionally persists each generated code for audit purposes. */
-export async function logAccessCodeGeneration(adminId: string) {
-  const { code, rotatesAt } = getCurrentAccessCode();
-  const db = supabaseAdmin();
-  await db.from('event_access_codes').insert({
-    code,
-    valid_from: new Date().toISOString(),
-    valid_to: new Date(rotatesAt).toISOString(),
-    generated_by: adminId,
-  });
+export function isAccessCodeValid(submitted: string, nowMs = Date.now()): boolean {
+  const code = submitted.trim();
+  if (!/^\d{4}$/.test(code)) return false;
+  const current = windowIndexAt(nowMs);
+  if (safeEqual(code, deriveCode(current))) return true;
+  const intoWindowMs = nowMs - current * ROTATE_SECONDS * 1000;
+  return intoWindowMs < GRACE_SECONDS * 1000 && safeEqual(code, deriveCode(current - 1));
 }

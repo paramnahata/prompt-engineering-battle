@@ -1,0 +1,103 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { useServerCountdown } from '@/hooks/useServerCountdown';
+import { usePolling } from '@/hooks/usePolling';
+import { formatMMSS } from '@/lib/timer';
+import AccessCodePanel from '@/components/admin/AccessCodePanel';
+import { Podium, type Winner } from '@/components/results/Podium';
+
+interface DisplayData {
+  registered: number;
+  present: number;
+  submitted: number;
+  round: { round_number: number; status: string; round_end_at: string | null } | null;
+  round2: { round_number: number; status: string; round_end_at: string | null } | null;
+  announcements: { id: string; message: string }[];
+  winners?: Winner[];
+  serverNow: string;
+}
+
+const STATUS_LABEL: Record<string, string> = { not_started: 'Not started', running: 'In progress', paused: 'Paused', ended: 'Ended' };
+
+export default function DisplayScreen() {
+  const [data, setData] = useState<DisplayData | null>(null);
+  const [clock, setClock] = useState('');
+
+  const load = useCallback(async () => {
+    const res = await fetch('/api/display/stats', { cache: 'no-store' });
+    if (res.status === 401 || res.status === 403) {
+      window.location.replace('/organizer/login?next=/display');
+      return;
+    }
+    if (!res.ok) throw new Error('stats');
+    setData(await res.json());
+  }, []);
+  usePolling(load, 5000, { pauseWhenHidden: false });
+
+  useEffect(() => {
+    const t = setInterval(() => setClock(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Once Round 2 has started, the projector follows Round 2.
+  const round = data?.round2 && data.round2.status !== 'not_started' ? data.round2 : data?.round;
+  const secondsLeft = useServerCountdown({
+    endAtIso: round?.status === 'running' ? round.round_end_at : null,
+    serverNowIso: data?.serverNow ?? null,
+  });
+
+  return (
+    <div className="flex min-h-screen flex-col gap-8 bg-background p-8 text-foreground">
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="font-display text-4xl font-semibold text-white" style={{ fontVariationSettings: "'wdth' 84" }}>Prompt Engineering Battle</h1>
+          <p className="mt-1 text-muted">SWAYAMBHU 2026</p>
+        </div>
+        <div className="text-right">
+          <div className="font-display text-3xl font-semibold tabular">{clock}</div>
+          <div className="text-xs text-muted">Live</div>
+        </div>
+      </header>
+
+      <section className="flex flex-1 flex-col items-center justify-center gap-4">
+        {data?.winners?.length ? (
+          <div className="w-full max-w-5xl">
+            <div className="mb-6 text-center font-display text-5xl font-semibold text-white">And the winners are…</div>
+            <Podium winners={data.winners} size="lg" />
+          </div>
+        ) : round ? (
+          <>
+            <div className="text-sm text-muted">Round {round.round_number} — {STATUS_LABEL[round.status] ?? round.status}</div>
+            {round.status === 'running' && secondsLeft !== null ? (
+              <div className={`font-display text-[9rem] font-semibold leading-none tabular sm:text-[11rem] ${secondsLeft < 60 ? 'animate-pulse-glow text-rose-300' : 'text-white'}`}>{formatMMSS(secondsLeft)}</div>
+            ) : (
+              <div className="text-5xl font-semibold text-muted">
+                {round.status === 'not_started' && 'Waiting to begin…'}
+                {round.status === 'paused' && 'Paused'}
+                {round.status === 'ended' && 'Round complete'}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-2xl text-muted">Preparing event…</div>
+        )}
+      </section>
+
+      {!data?.winners?.length && <div className="mx-auto w-full max-w-md"><AccessCodePanel large /></div>}
+
+      <section className="grid grid-cols-3 gap-4">
+        {[['Registered', data?.registered], ['Checked in', data?.present], ['Answers submitted', data?.submitted]].map(([label, value]) => (
+          <div key={label as string} className="peb-card py-6 text-center">
+            <div className="font-display text-5xl font-semibold tabular text-white">{value ?? '—'}</div>
+            <div className="mt-1 text-xs text-muted">{label}</div>
+          </div>
+        ))}
+      </section>
+
+      <footer className="peb-card overflow-hidden text-center text-lg">
+        {data?.announcements.length ? data.announcements[0]?.message : <span className="text-sm text-muted">No announcements</span>}
+      </footer>
+    </div>
+  );
+}

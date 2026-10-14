@@ -1,7 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireRole } from '@/lib/auth/session';
 import { supabaseAdmin } from '@/lib/supabase/server';
+import { rpcFailure, studentClaims } from '@/lib/auth/student';
+import { jsonOk, readJson, serverError } from '@/lib/http';
+
+export const dynamic = 'force-dynamic';
 
 const bodySchema = z.object({
   submissionId: z.string().uuid(),
@@ -10,91 +13,22 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const session = requireRole('student');
-  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-
-  const parsed = bodySchema.safeParse(await req.json());
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  const { submissionId, promptText, aiOutputText } = parsed.data;
-
-  const db = supabaseAdmin();
-
-  // Ownership + lock check — never allow saving into someone else's
-  // submission, or a challenge whose timer has expired.
-  const { data: submission, error } = await db
-    .from('submissions')
-    .select('id, entry_id, status, question_end_at, assignment_id')
-    .eq('id', submissionId)
-    .single();
-  if (error || !submission) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  if (submission.entry_id !== session.userId) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  const auth = studentClaims();
+  if (!auth.ok) return auth.response;
+  const body = await readJson(req, bodySchema, 128 * 1024);
+  if (!body.ok) return body.response;
+  try {
+    const { data, error } = await supabaseAdmin().rpc('student_autosave', {
+      p_sid: auth.claims.sid,
+      p_entry: auth.claims.sub,
+      p_submission: body.data.submissionId,
+      p_prompt: body.data.promptText,
+      p_output: body.data.aiOutputText,
+    });
+    if (error) throw error;
+    if (!data?.ok) return rpcFailure(data ?? {});
+    return jsonOk({ ok: true, savedAt: data.savedAt });
+  } catch (err) {
+    return serverError('autosave', err, 'Could not save your draft. Retrying…');
   }
-  if (submission.status !== 'draft') {
-    return NextResponse.json({ error: 'locked' }, { status: 409 });
-  }
-  if (submission.question_end_at && new Date(submission.question_end_at) <= new Date()) {
-    return NextResponse.json({ error: 'expired' }, { status: 409 });
-  }
-
-  // Enforce this challenge's per-PS limits server-side — a client-side
-  // word counter alone can be bypassed via devtools.
-  const { data: assignment } = await db
-    .from('challenge_assignments')
-    .select('challenge_id, round_id')
-    .eq('id', submission.assignment_id)
-    .single();
-  if (assignment) {
-    const { data: round } = await db.from('rounds').select('status').eq('id', assignment.round_id).single();
-    if (!round || round.status === 'ended' || round.status === 'not_started') {
-      return NextResponse.json({ error: 'Round 1 has ended. Your changes can no longer be saved.', roundEnded: true }, { status: 409 });
-    }
-    if (round.status === 'paused') {
-      return NextResponse.json({ error: 'Round 1 is paused. Your draft has not been changed; wait for the organizer to resume.', roundPaused: true }, { status: 409 });
-    }
-    if (round.status !== 'running') {
-      return NextResponse.json({ error: 'Round status is unavailable. Please wait and retry.' }, { status: 409 });
-    }
-    const { data: challenge } = await db
-      .from('challenges')
-      .select('prompt_word_limit, output_char_limit')
-      .eq('id', assignment.challenge_id)
-      .single();
-    if (challenge) {
-      const wordCount = promptText.trim().length === 0 ? 0 : promptText.trim().split(/\s+/).length;
-      if (wordCount > challenge.prompt_word_limit) {
-        return NextResponse.json(
-          { error: `Prompt exceeds the ${challenge.prompt_word_limit}-word limit for this challenge (currently ${wordCount}).` },
-          { status: 422 }
-        );
-      }
-      if (aiOutputText.length > challenge.output_char_limit) {
-        return NextResponse.json(
-          { error: `AI output exceeds the ${challenge.output_char_limit}-character limit for this challenge.` },
-          { status: 422 }
-        );
-      }
-    }
-  }
-
-  const now = new Date().toISOString();
-
-  const { error: saveError } = await db
-    .from('submissions')
-    .update({ prompt_text: promptText, ai_output_text: aiOutputText, last_saved_at: now })
-    .eq('id', submissionId)
-    .eq('status', 'draft');
-  if (saveError) return NextResponse.json({ error: 'Could not save your draft. Please retry.' }, { status: 500 });
-
-  // Keep a lightweight version trail (not on every keystroke — this route
-  // itself is already called at most every ~5s by the client debounce).
-  const { error: versionError } = await db.from('submission_versions').insert({
-    submission_id: submissionId,
-    prompt_text: promptText,
-    ai_output_text: aiOutputText,
-    saved_at: now,
-  });
-  if (versionError) return NextResponse.json({ error: 'Draft was saved, but its version history could not be recorded.' }, { status: 500 });
-
-  return NextResponse.json({ savedAt: now });
 }

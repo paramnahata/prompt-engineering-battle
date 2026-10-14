@@ -1,10 +1,10 @@
-import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/session';
+import { jsonError, jsonOk } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const session = getSession();
-  if (!session) return NextResponse.json({ authenticated: false }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
-  return NextResponse.json({ authenticated: true, role: session.role }, { headers: { 'Cache-Control': 'no-store' } });
+  const session = await getSession({ touch: false });
+  if (!session) return jsonError('Not signed in.', 401, { authenticated: false });
+  return jsonOk({ authenticated: true, role: session.role, entryNumber: session.entryNumber });
 }

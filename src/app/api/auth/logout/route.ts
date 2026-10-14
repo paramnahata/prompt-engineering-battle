@@ -1,9 +1,13 @@
-import { NextResponse } from 'next/server';
 import { destroySession } from '@/lib/auth/session';
+import { jsonOk, serverError } from '@/lib/http';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST() {
-  destroySession();
-  return NextResponse.json({ ok: true }, {
-    headers: { 'Cache-Control': 'no-store, max-age=0' },
-  });
+  try {
+    await destroySession();
+    return jsonOk({ ok: true });
+  } catch (err) {
+    return serverError('logout', err);
+  }
 }

@@ -66,8 +66,8 @@ export default function UserManagementClient() {
 
   const resetPassword = async (u: UserVM) => {
     const newPassword = prompt(`New password for ${u.email}:`);
-    if (!newPassword || newPassword.length < 6) {
-      if (newPassword !== null) alert('Password must be at least 6 characters.');
+    if (!newPassword || newPassword.length < 8) {
+      if (newPassword !== null) alert('Password must be at least 8 characters. The account will be signed out everywhere.');
       return;
     }
     const res = await fetch('/api/admin/users', {
@@ -140,7 +140,7 @@ export default function UserManagementClient() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            minLength={6}
+            minLength={8}
           />
         </div>
         {error && <p className="text-sm text-red-400">{error}</p>}

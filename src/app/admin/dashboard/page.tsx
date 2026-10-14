@@ -1,16 +1,15 @@
-import Link from 'next/link';
-import { redirect } from 'next/navigation';
-import { requireRole } from '@/lib/auth/session';
-import AdminDashboardClient from '@/components/admin/AdminDashboardClient';
+import { requirePageRole } from '@/lib/auth/session';
+import OrganizerShell from '@/components/layout/OrganizerShell';
+import OverviewClient from '@/components/admin/OverviewClient';
 
-export default function AdminDashboardPage() {
-  const session = requireRole('admin');
-  if (!session) redirect('/organizer/login?next=/admin/dashboard');
+export const dynamic = 'force-dynamic';
+export const metadata = { title: 'Overview' };
 
+export default async function AdminDashboardPage() {
+  const session = await requirePageRole(['admin'], '/admin/dashboard');
   return (
-    <main className="min-h-screen p-8">
-      <Link href="/organizer/hub" className="text-xs text-muted hover:text-foreground mb-4 inline-block">← Organizer Hub</Link>
-      <AdminDashboardClient />
-    </main>
+    <OrganizerShell role={session.role} userId={session.userId}>
+      <OverviewClient />
+    </OrganizerShell>
   );
 }

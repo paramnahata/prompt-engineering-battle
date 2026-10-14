@@ -1,51 +1,39 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireRole } from '@/lib/auth/session';
+import { NextRequest } from 'next/server';
+import { z } from 'zod';
+import { requireApiRole } from '@/lib/auth/session';
 import { supabaseAdmin } from '@/lib/supabase/server';
+import { jsonError, jsonOk, readJson, serverError } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';
 
+const bodySchema = z.object({
+  action: z.enum(['start', 'pause', 'resume', 'stop', 'reset', 'assign_missing']),
+  confirm: z.string().max(40).optional(),
+});
+
+/**
+ * All Round 1 transitions go through one SQL function that locks the round
+ * row, validates the current state and writes the audit trail in the same
+ * transaction. Buttons in the UI are a convenience, not the enforcement.
+ */
 export async function POST(req: NextRequest) {
-  const session = requireRole('admin');
-  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-
-  const body = await req.json().catch(() => ({}));
-  const action = body?.action;
-  if (!['pause', 'resume'].includes(action)) {
-    return NextResponse.json({ error: 'Choose pause or resume.' }, { status: 400 });
+  const auth = await requireApiRole(['admin']);
+  if (!auth.ok) return auth.response;
+  const body = await readJson(req, bodySchema, 2048);
+  if (!body.ok) return body.response;
+  try {
+    // Start over goes through round1_start_over, which refuses once Round 2 has begun.
+    const { data, error } = body.data.action === 'reset'
+      ? await supabaseAdmin().rpc('round1_start_over', { p_admin: auth.session.userId, p_confirm: body.data.confirm ?? null })
+      : await supabaseAdmin().rpc('round1_control', {
+          p_action: body.data.action,
+          p_admin: auth.session.userId,
+          p_confirm: body.data.confirm ?? null,
+        });
+    if (error) throw error;
+    if (!data?.ok) return jsonError(data?.message ?? 'Action not allowed right now.', data?.status ?? 409, { code: data?.code });
+    return jsonOk(data);
+  } catch (err) {
+    return serverError('round1 control', err, 'The round action failed. Refresh and check the round status before retrying.');
   }
-
-  const db = supabaseAdmin();
-  const { data: round, error } = await db.from('rounds')
-    .select('id, status, round_end_at')
-    .eq('round_number', 1)
-    .single();
-
-  if (error || !round) return NextResponse.json({ error: 'Round 1 not found.' }, { status: 404 });
-
-  const expected = action === 'pause' ? 'running' : 'paused';
-  const nextStatus = action === 'pause' ? 'paused' : 'running';
-  if (round.status !== expected) {
-    return NextResponse.json({ error: `Round 1 is currently ${round.status}; cannot ${action} it.`, status: round.status }, { status: 409 });
-  }
-
-  const { error: updateError } = await db.from('rounds')
-    .update({ status: nextStatus })
-    .eq('id', round.id)
-    .eq('status', expected);
-  if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
-
-  await db.from('admin_actions').insert({
-    admin_id: session.userId,
-    action: `${action}_round1`,
-    old_value: { status: expected },
-    new_value: { status: nextStatus },
-  });
-
-  await db.from('announcements').insert({
-    message: action === 'pause' ? 'Round 1 has been paused by the organizer.' : 'Round 1 has resumed.',
-    active: true,
-    created_by: session.userId,
-  });
-
-  return NextResponse.json({ ok: true, status: nextStatus });
 }

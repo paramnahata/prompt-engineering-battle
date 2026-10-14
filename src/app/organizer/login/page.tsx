@@ -1,16 +1,18 @@
 import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/auth/session';
+import { getSession, homeForRole } from '@/lib/auth/session';
+import { safeNextPath } from '@/lib/http';
+import { describeHealthProblem, getHealth } from '@/lib/ops/health';
 import OrganizerLoginForm from '@/components/auth/OrganizerLoginForm';
 
 export const dynamic = 'force-dynamic';
+export const metadata = { title: 'Organizer sign in' };
 
-export default function OrganizerLoginPage() {
-  const session = getSession();
+export default async function OrganizerLoginPage({ searchParams }: { searchParams: { next?: string } }) {
+  const session = await getSession({ touch: false }).catch(() => null);
   if (session) {
-    if (session.role === 'admin') redirect('/admin/dashboard');
-    if (session.role === 'volunteer') redirect('/admin/attendance');
-    if (session.role === 'judge') redirect('/judge/dashboard');
-    if (session.role === 'student') redirect('/student/waiting');
+    if (session.role === 'student') redirect(homeForRole('student'));
+    redirect(safeNextPath(searchParams.next, homeForRole(session.role)));
   }
-  return <OrganizerLoginForm />;
+  const setupIssue = describeHealthProblem(await getHealth());
+  return <OrganizerLoginForm next={safeNextPath(searchParams.next, '')} setupIssue={setupIssue} />;
 }
