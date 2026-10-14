@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { requireApiRole } from '@/lib/auth/session';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { jsonError, jsonOk, serverError, uuidSchema } from '@/lib/http';
+import { suggestJuryQuestions } from '@/lib/round2/questions';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,7 @@ export async function GET(_req: NextRequest, { params }: { params: { entryId: st
       db.from('round2_assignments').select('problem_snapshot').eq('entry_id', entryId.data).maybeSingle(),
       db.from('entries').select('entry_number, team_name, team_members(member_position, full_name, college)').eq('id', entryId.data).maybeSingle(),
       db.from('judge_questions').select('id, question, answer, asked_at, answered_at, judge:judges(full_name), admin:admins(full_name)').eq('entry_id', entryId.data).order('asked_at'),
-      db.from('judge_scores').select('judge_id, understanding, response_quality, adaptability, interaction, total, notes, locked, saved_at, judge:judges(full_name)').eq('entry_id', entryId.data),
+      db.from('judge_scores').select('judge_id, understanding, response_quality, adaptability, interaction, total, max_total, question_scores, notes, locked, saved_at, judge:judges(full_name)').eq('entry_id', entryId.data),
       auth.session.role === 'admin' ? db.from('round2_ai_evaluations').select('*').eq('entry_id', entryId.data).maybeSingle() : Promise.resolve({ data: null }),
       auth.session.role === 'admin' ? db.from('round2_reviews').select('old_score, new_score, reason, created_at').eq('entry_id', entryId.data).order('created_at', { ascending: false }) : Promise.resolve({ data: [] }),
     ]);
@@ -30,10 +31,13 @@ export async function GET(_req: NextRequest, { params }: { params: { entryId: st
       const mine = s.judge_id === auth.session.userId;
       return auth.session.role === 'admin' || mine
         ? { ...s, judge: judge?.full_name ?? null, mine }
-        : { judge_id: s.judge_id, judge: judge?.full_name ?? null, total: s.total, locked: s.locked, mine: false };
+        : { judge_id: s.judge_id, judge: judge?.full_name ?? null, total: s.total, max_total: s.max_total, locked: s.locked, mine: false };
     });
+    const problem = (asg.data?.problem_snapshot ?? null) as Record<string, string | null> | null;
+    const twist = state.data.twist_snapshot as { title?: string; description?: string } | null;
     return jsonOk({
-      entry: entry.data, work: state.data, problem: asg.data?.problem_snapshot ?? null,
+      entry: entry.data, work: state.data, problem,
+      suggestions: suggestJuryQuestions({ problem, twist: state.data.twist_revealed_at ? twist : null, work: state.data }),
       questions: (questions.data ?? []).map((q) => {
         const j = Array.isArray(q.judge) ? q.judge[0] : q.judge;
         const a = Array.isArray(q.admin) ? q.admin[0] : q.admin;

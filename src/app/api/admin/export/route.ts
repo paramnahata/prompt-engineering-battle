@@ -80,15 +80,19 @@ export async function GET(req: NextRequest) {
         .sort((x, y) => Number(x[0]) - Number(y[0]));
     } else if (type === 'jury_scores') {
       const { data, error } = await db.from('judge_scores')
-        .select('understanding, response_quality, adaptability, interaction, total, locked, notes, saved_at, judge:judges(full_name), entry:entries(entry_number, team_name)').limit(5000);
+        .select('understanding, response_quality, adaptability, interaction, total, max_total, question_scores, locked, notes, saved_at, judge:judges(full_name), entry:entries(entry_number, team_name)').limit(5000);
       if (error) throw error;
-      headers = ['Entry', 'Team', 'Judge', 'Understanding', 'Response quality', 'Adaptability', 'Interaction', 'Total', 'Locked', 'Notes', 'Saved at'];
-      rows = (data ?? []).map((s) => { const e = one<{ entry_number: number; team_name: string | null }>(s.entry); const j = one<{ full_name: string }>(s.judge); return [e?.entry_number, e?.team_name, j?.full_name, s.understanding, s.response_quality, s.adaptability, s.interaction, s.total, s.locked ? 'yes' : 'no', s.notes, s.saved_at]; })
+      headers = ['Entry', 'Team', 'Judge', 'Understanding', 'Response quality', 'Adaptability', 'Interaction', 'Questions and marks', 'Total', 'Out of', 'Locked', 'Notes', 'Saved at'];
+      rows = (data ?? []).map((s) => {
+        const e = one<{ entry_number: number; team_name: string | null }>(s.entry); const j = one<{ full_name: string }>(s.judge);
+        const qs = Array.isArray(s.question_scores) ? (s.question_scores as { question: string; mark: number }[]).map((q, i) => `Q${i + 1} [${q.mark}] ${q.question}`).join(' | ') : '';
+        return [e?.entry_number, e?.team_name, j?.full_name, s.understanding, s.response_quality, s.adaptability, s.interaction, qs, s.total, s.max_total, s.locked ? 'yes' : 'no', s.notes, s.saved_at];
+      })
         .sort((x, y) => Number(x[0]) - Number(y[0]));
     } else if (type === 'final_results') {
       const { data, error } = await db.from('final_results').select('rank, round1_score, round2_jury, round2_ai, round2_score, final_score, released, computed_at, entry:entries(entry_number, team_name)').order('rank').limit(1000);
       if (error) throw error;
-      headers = ['Rank', 'Entry', 'Team', 'Round 1', 'Round 2 jury', 'Round 2 AI', 'Round 2 total', 'Final', 'Published', 'Computed at'];
+      headers = ['Rank', 'Entry', 'Team', 'Round 1', 'Round 2 jury', 'Round 2 system (AI)', 'Round 2 total', 'Final', 'Published', 'Computed at'];
       rows = (data ?? []).map((r) => { const e = one<{ entry_number: number; team_name: string | null }>(r.entry); return [r.rank, e?.entry_number, e?.team_name, r.round1_score, r.round2_jury, r.round2_ai, r.round2_score, r.final_score, r.released ? 'yes' : 'no', r.computed_at]; });
     } else {
       const { data, error } = await db.from('admin_actions').select('created_at, action, reason, admin:admins(full_name, email), entry:entries(entry_number), new_value').order('created_at', { ascending: false }).limit(5000);

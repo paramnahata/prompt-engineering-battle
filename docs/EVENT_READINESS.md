@@ -4,10 +4,10 @@ Branch `hardening/event-readiness` (PR #4), based on `main` @ `0e37ab2` (product
 
 Everything below was verified by running code; the commands and outputs are in §8. Anything that was **not** verified is marked as such.
 
-**Nothing has been applied to production.** Migrations 0003, 0004, 0005 and 0006 are unapplied. `main` is unchanged. No live setting or production data was modified. Production was only read (schema checks).
+**Production status:** see §9.3 for exactly which steps have been carried out. Until a step is listed there as done, migrations 0003–0007 are unapplied and `main` is unchanged.
 
 Contents:
-0. Phase 3: complete platform (login 500 root cause, Round 2, results, redesigned UI, how to test)
+0. Phase 3: complete platform (login 500 root cause, Round 2, results, redesigned UI, how to test) and the Round 2 event format (§0.5)
 1. Audit findings (phase 1)
 2. Feature summary (phases 1 + 2)
 3. Competition rules as implemented
@@ -32,7 +32,7 @@ Contents:
   - New **`GET /api/health`**: public callers get `{ok, database, schemaVersion}`; a signed-in admin also gets the missing functions/tables and the *names* of missing environment variables. Backed by the new `app_schema_status()` SQL function.
   - Both sign-in pages show a banner ("This deployment's database is missing required migrations…") instead of letting people type credentials into a broken form.
   - Verified: against the production-shaped database the login returns 503 + banner; against the migrated database the same request returns 200.
-- **What still has to happen (blocker, needs your approval):** apply migrations `0003 → 0004 → 0005 → 0006` to the Supabase project the deployment uses. Until then *no* login can work on the preview, because the session and rate-limit tables don't exist there. There is no free, separate staging database available (both free Supabase project slots are in use), so the preview can only be tested after the production database is migrated — see §9.3.
+- **What still has to happen (blocker, needs your approval):** apply migrations `0003 → 0004 → 0005 → 0006 → 0007` to the Supabase project the deployment uses. Until then *no* login can work on the preview, because the session and rate-limit tables don't exist there. There is no free, separate staging database available (both free Supabase project slots are in use), so the preview can only be tested after the production database is migrated — see §9.3.
 
 ### 0.2 CSP errors on the preview
 Vercel injects its feedback toolbar (`vercel.live`) into **preview** deployments; our strict CSP blocked it, producing console errors. `next.config.mjs` now allows exactly the origins Vercel documents for the toolbar (`vercel.live`, `vercel.com`, `assets.vercel.com`, `wss://ws-us3.pusher.com`) **only when `VERCEL_ENV=preview`**. Production keeps the strict policy. Fonts are self-hosted (no third-party requests). A browser walk-through of 30+ screens on the local production build showed no CSP violations (the preview-only toolbar allowance itself could not be exercised outside Vercel).
@@ -59,6 +59,23 @@ Vercel injects its feedback toolbar (`vercel.live`) into **preview** deployments
 **Organizer.** Sign in at `/organizer/login` → Overview shows the setup checklist. Registration desk: import CSV, check teams in, "Generate missing PINs", print slips. Challenge pool: import, choose Common A/B. Round 1: Start → (students work) → Stop → Run evaluation. Results: compute, review ties, publish. Round 2: Problems/Twists → Settings (save) → Finalists ("Use Round 1 qualifiers") → Run the round: Start → Reveal twist → Stop. Jury (judge account): ask, score, lock. Results → Final: compute, publish. Settings: exports, reset preview.
 
 **Student.** `/student/login` with entry number + PIN slip + the 4-digit room code from `/display` → dashboard → Round 1 opens automatically when started → submitted screen → results when published → Round 2 page if a finalist.
+
+### 0.5 Round 2 event format (migration 0007)
+The final works the way the organizers described it:
+
+| Rule | How it is implemented |
+|---|---|
+| **Top 15% go to Round 2** | Round 1 qualification % (default 15, Settings) → Results → compute → Round 2 → Finalists → "Use Round 1 qualifiers". Teams tied at the cut-off all qualify. |
+| **One real-world problem per team, different problems** | Round 2 → Problems → **Import .docx** reads the problem pack in the browser (format: `Problem NN: Title`, `Category: … | Difficulty: …`, then sections **A** main statement, **B** parallel variant, **C** sample prompt, **D** expected solution; the evaluator checklist, rubric table and fairness rule become the shared jury criteria). Preview, then import; re-importing updates problems by number. Problem mode "Shared out from the active problems" gives each team one problem, balanced so teams get different problems while there are enough. |
+| **Surprise twist from the admin panel** | Twist mode "Each team gets its own problem's twist": the **B. parallel variant** of each problem is that team's twist. Run the round → **Reveal twist** shows every team the variant of *its own* problem. Preflight refuses to start if an active problem has no twist, and reveal refuses (changing nothing) if any team's problem lacks one. |
+| **20–30 minutes** | Default 25 minutes (Settings; any 5–240). |
+| **Jury at the team's table, on a phone** | Judge signs in on a phone → Jury. Team picker at the top; tabs: *Problem & work* (problem, twist, final prompt and AI output, explanation, first attempt), *Ask & mark*, *Jury reference* (twist before it is revealed, sample prompt, expected solution, rubric — never sent to students), *Written Q&A* (optional questions to the team's screen). |
+| **Questions: the jury's own or suggested by the system** | *Ask & mark* lists 8–12 suggested questions built from that team's problem figures, twist, prompts, output and explanation (free, no API call), plus an optional **AI suggestions** button (Gemini, rate-limited, uses the organizer's key). Tap a suggestion to use it, or type your own. |
+| **Marks for 4–5 questions** | Jury mode "Marks per question": default **5 questions × 10 marks** (configurable 1–10 questions, 1–100 marks). Each mark is saved with its question text; a judge can save drafts and must mark every question to lock. Admins see every judge's questions and marks; the jury CSV export includes them. |
+| **System marks + jury marks = result** | Round 2 = average jury total (out of 50) + system (AI) score scaled to 50 (on by default) = **out of 100**. Default final weights **Round 1 × 0 + Round 2 × 1**, so Round 2 decides the winners (configurable). Ties are broken by jury score, then system score, then Round 1 score; teams equal on all of these share a place. |
+| **Declare the result** | Results → **Final & winners** shows a 1st/2nd/3rd podium. Publishing shows it on the projector (`/display`, "And the winners are…") and each team's results page ("Winner — 1st place"). Nothing is visible before publishing. |
+
+No mechanism exists to pick or adjust winners other than the audited Round 2 score override (admin, with a reason, recorded in the audit log).
 
 
 ---
@@ -339,12 +356,13 @@ Students stay signed in and return to the waiting room.
 | Typecheck | `npx tsc --noEmit` | ✅ 0 errors. No `any` casts or ignore directives were added. |
 | Lint | `npx next lint` | ✅ no warnings |
 | Production build | `npx next build` | ✅ all routes compiled (phase 3 adds 25 API routes and 6 pages), middleware 26.8 kB |
-| Unit tests | `npm test` | ✅ 26 passed (3 new: CSV formula safety, schema-error detection, Round 2 evaluator validation). 1 is skipped unless `PEB_PS_WORKBOOK` is set; with your workbook it passes. |
-| Database function tests | `PGHOST=/tmp PGPORT=54329 npm run test:db` | ✅ **54/54** (14 new for Round 2, final results, publication, announcements, reset, privileges) |
-| HTTP tests (local stack) | `tests/api/run.sh` | ✅ **30/30** (85 endpoint rows in the authorization matrix; 8 new end-to-end Round 2 / results / announcements / exports / reset tests), plus the real-workbook test (skipped unless `PEB_PS_WORKBOOK` is set). Re-runnable: two consecutive runs both pass. |
-| Migration up → down → up | `tests/db/rollback.sh` | ✅ 0006, 0005 and 0004 roll back cleanly with data kept, and re-apply cleanly (`app_schema_status` = v6, nothing missing). |
-| Upgrade of a production-shaped DB | 0001–0003 + sample data, then 0004 → 0006 | ✅ applies without errors; entry numbers back-filled; existing challenges become `review`; old public announcement still visible; schema v6 complete. |
+| Unit tests | `npm test` | ✅ 34 passed (8 new in 0007: .docx pack parsing incl. a decompression-size cap and malformed files, suggested jury questions, AI-suggestion validation). 1 is skipped unless `PEB_PS_WORKBOOK` is set. The real Round 2 pack was also parsed locally (25/25 problems with all four sections); it is **not** committed, because the repository is public and the pack contains the evaluator guide. |
+| Database function tests | `PGHOST=/tmp PGPORT=54329 npm run test:db` | ✅ **62/62** (8 new for 0007: defaults, pack import, per-problem twist and preflight, jury question mode, tie-break, old-config compatibility, privileges). One earlier run had 2 failures in `pool-reset` (PIN issuance / entry editing) that did not reproduce in 3 later runs, alone or in the full suite; treat as a possible flaky test. |
+| HTTP tests (local stack) | `tests/api/run.sh` | ✅ **34/34** (87 endpoint rows in the authorization matrix; 4 new for the Round 2 event format: pack import, one problem per team + own twist, jury marks per question with suggestions, winners on projector/results), plus the real-workbook test (skipped unless `PEB_PS_WORKBOOK` is set). Re-runnable: consecutive runs pass. |
+| Migration up → down → up | `tests/db/rollback.sh` | ✅ 0007, 0006, 0005 and 0004 roll back cleanly with data kept, and re-apply cleanly (`app_schema_status` = v7, nothing missing). |
+| Upgrade of a production-shaped DB | 0001–0003 + sample data, then 0004 → 0007 | ✅ applies without errors; entry numbers back-filled; existing challenges become `review`; old public announcement still visible; an existing Round 2 problem is kept (no twist yet); schema v7 complete. |
 | Login 500 reproduction | production-shaped DB behind PostgREST | ✅ raw call gives `PGRST202` (the cause); the app now returns 503 `setup_required` + a sign-in banner; the same login against the migrated DB returns 200. |
+| Round 2 event flow in a browser | Playwright + Chromium, local production build | ✅ admin imports the real .docx through the UI (25 problems, all with twist), saves the default settings, 4 finalists get 4 different problems, reveal gives each its own variant (student phone view checked), judge on a 390 px phone uses suggested + own questions and marks, AI suggestions (mock Gemini), compute → podium on admin, projector and the winning team's phone. |
 | Browser walk-through | Playwright + Chromium, local production build, desktop 1440 px and phone 390 px | ✅ 40+ screenshots (student login, dashboard, Round 1 arena, Round 2 stages, results; organizer overview, rounds, jury, results, announcements, settings, desk, pool, projector) render without page errors or CSP violations. Visual issues found this way were fixed and re-checked (toggle switch, phone header, PIN placeholder spacing); the Round 2 stage bar fix for phones was not re-screenshotted. |
 | Real workbook (600 PS) over HTTP | `PEB_PS_WORKBOOK=… node --test tests/api/real-workbook.test.ts` | ✅ payload 293 KB · preview 84–115 ms · publish 599 rows ~30 ms · re-upload = 599 unchanged · list/search/filter 48–94 ms |
 | `npm audit --omit=dev` | | 11 issues, all present before this work (see S17) |
@@ -406,48 +424,52 @@ Runner: `tests/load/run-local.sh`. Every service and the load generator share th
 | `0004_event_readiness.sql` | Entry numbers (with a trigger, so old inserts still work), per-member fields, a team-size constraint of **1–2** (it **fails if any existing entry has 3+ members**; a read-only check of production on 2026-10-13 found 10 entries, all with at most 2 members, 104 challenges rated easy/medium/hard, both rounds `not_started`, and none of 0003–0005 applied), common slots, sessions, rate limits and all the round functions. | Yes, additive. Old code keeps working. |
 | `0005_pins_pool_reset.sql` | PIN columns, pool status, difficulty `expert`/`unrated`, import batches, assignment snapshots, assignment rules, preflight, the new login/PIN/publish/reset/edit functions. **Existing challenges become `review`**, so nothing is assigned until you approve the pool. | Yes for the schema. The old app's assignment code ignores `pool_status`. |
 | `0006_round2_results_comms.sql` | Round 2 settings/finalists/jury/AI queue/overrides, final results, results publication settings, announcement targeting (the public read policy now only exposes `audience = 'all'`), student dashboard/results functions, reset preview, `app_schema_status()`, and an extended `competition_reset`. | Yes, additive. New columns have defaults; existing function signatures are unchanged. |
+| `0007_round2_pack_jury_questions.sql` | Round 2 problem pack fields (category, difficulty, per-problem twist, jury-only sample prompt), twist mode `problem`, jury mode `questions` (per-question marks with question text), event defaults (25 min, shared-out problems, own twist, 5 × 10 jury, AI 50, weights 0/1), tie-break, `round2_import_problems()`, `app_schema_status()` v7. | Yes, additive. Configurations saved before 0007 keep working (missing jury mode = criteria). |
 
 ### 9.2 Staging (₹0 budget)
 There is no separate staging database: both free Supabase project slots are in use, and Supabase branches are billed, so neither was created. Instead:
 - Every migration, the full HTTP suite and the k6 load tests run against a **local staging stack** that mirrors Supabase (Postgres 16 + PostgREST + the same migrations) with synthetic data (`tests/stack/start.sh`, `tests/api/run.sh`, `tests/load/run-local.sh`).
 - Migrations were also applied to a **production-shaped copy** (only 0001–0003, like production today) to confirm they upgrade it cleanly and to reproduce the login 500.
-- `tests/db/rollback.sh` proves `0006 → 0005 → 0004` roll back and re-apply cleanly.
-- Vercel Preview uses the production database. Because 0003–0006 are additive and safe with the currently deployed `main`, applying them to that database is what unblocks the preview — but it is a change to the production database, so it needs your go-ahead (§9.3 step 3).
+- `tests/db/rollback.sh` proves `0007 → 0006 → 0005 → 0004` roll back and re-apply cleanly.
+- Vercel Preview uses the production database. Because 0003–0007 are additive and safe with the currently deployed `main`, applying them to that database is what unblocks the preview — but it is a change to the production database, so it needs your go-ahead (§9.3 step 3).
 
 ### 9.3 Production (each step needs your explicit go-ahead)
 1. Take a backup: Supabase dashboard → Database → Backups, or `pg_dump`.
 2. Set `PIN_PEPPER` (Production scope) in Vercel.
-3. Apply `0003`, `0004`, `0005` and `0006` to production, in that order and one at a time, checking for errors after each. Then open `/api/health` on the preview (signed in as admin): it must say `database: ok, schemaVersion: 6`. The preview login then works.
+3. Apply `0003`, `0004`, `0005`, `0006` and `0007` to production, in that order and one at a time, checking for errors after each. Then open `/api/health` (signed in as admin): it must say `database: ok, schemaVersion: 7`. Sign-in then works.
 4. Test the preview end to end (§0.4) with a test entry. Then merge PR #4 into `main`, which triggers the Vercel production deploy. **Everyone must sign in again**, because the cookie format changed.
 5. Admin → Challenge pool → Import: upload the final workbook, then **Merge** + **approved**. Then mark `CH-*` / `GK-*` as **test**, choose Common A/B and confirm the rules (Easy excluded).
 6. Registration desk → **Generate missing PINs**, then print the slips (or download the CSV) and store them securely.
 7. Smoke test with one test entry: check in, log in with its PIN, Start, answer, Stop, Run evaluation. Then **Reset Competition Data** and delete the test entry.
 8. Confirm that the Overview's "Before the event" list is empty (or only has items you accept).
-9. Round 2: add the real problem(s), review and save Round 2 settings before the event day.
+9. Round 2: Problems → Import .docx (the problem pack), review and save Round 2 settings, and create judge accounts (Accounts) before the event day.
 
 ### 9.4 Rollback
-- **App rollback (preferred, no data loss):** promote the previous production deployment in Vercel. 0004–0006 are additive, and the old app runs against them. Users must sign in again.
-- **Database rollback (only if really needed):** `supabase/rollback/0006_down.sql`, then `0005_down.sql`, then `0004_down.sql` (stop at the version you want).
+- **App rollback (preferred, no data loss):** promote the previous production deployment in Vercel. 0004–0007 are additive, and the old app runs against them. Users must sign in again.
+- **Database rollback (only if really needed):** `supabase/rollback/0007_down.sql`, then `0006_down.sql`, then `0005_down.sql`, then `0004_down.sql` (stop at the version you want).
   - These **drop** PIN hashes, pool status, import history, assignment snapshots, rules, sessions and entry numbers. They keep participants, members, challenges and submissions.
+  - `0007_down` restores the 0006 Round 2 functions and drops per-problem twists, pack metadata and per-question jury marks (judge totals are kept).
   - `0006_down` drops Round 2 finalists/jobs/overrides, announcement targeting and publication settings, and restores the 0005 `competition_reset`.
-  - Re-applying `0004`–`0006` afterwards works; this was tested locally (`tests/db/rollback.sh`).
+  - Re-applying `0004`–`0007` afterwards works; this was tested locally (`tests/db/rollback.sh`).
   - Take a backup first.
 
 ---
 
 ## 10. Known risks and limitations
-- **The preview cannot sign anyone in until migrations 0003–0006 are applied** to the database it uses (the production database). The app now says so clearly (503 + banner + `/api/health`) instead of a 500.
+- **No deployment of this code can sign anyone in until migrations 0003–0007 are applied** to the database it uses (the production database). The app now says so clearly (503 + banner + `/api/health`) instead of a 500.
 - **Not tested on Vercel + Supabase at 200 users.** The local numbers are an upper bound for 2 vCPU, not a production measurement. Login burst (p95 3.2 s) and the timer-expiry storm (p95 2.9 s) missed their targets on the local box; everything else passed with large margins.
 - **Gemini quota.** About 800 Round 1 evaluations (+1 per finalist in Round 2 if AI scoring is on). On the free tier (~10 requests/min for 2.5 Flash) that is about 80 minutes; failures can be retried.
 - **PIN distribution is a physical process.** Slips are shown once. A lost slip means re-issuing the PIN at the desk.
-- **Round 2 rules are yours to confirm.** The settings screen starts from suggested values (45 min, 4 jury criteria × 10, no AI score, weights 1 + 1); Round 2 refuses to start until an admin saves them.
+- **Round 2 rules are yours to confirm.** The settings screen starts from your described format (25 min, one problem per team, own twist, 5 questions × 10 jury marks, AI 50, Round 2 decides the winners); Round 2 refuses to start until an admin saves them.
+- **System (AI) score needs Gemini.** With AI on, final results wait until every Round 2 evaluation has finished (or "compute anyway"). If the Gemini key or quota fails on the day, turn the AI score off before Round 2 starts so the jury alone decides.
+- **Suggested questions are prompts for the jury, not a script.** Built-in suggestions are template-based; "AI suggestions" uses one Gemini call per tap (limited to 12 per judge per 10 minutes).
 - **Round 1 rubric** (five criteria × 10 per challenge) is fixed in code; per-challenge limits and qualification % are configurable.
 - **Difficulty data in the workbook:** 5 rows are unrated and 1 has a blank category. They are excluded from slots 3–4 until rated.
 
 ## 11. Decisions and data still needed from you
-1. **Approval to apply migrations 0003 → 0006 to the Supabase project** (the one Production and Preview share). This is the only thing blocking sign-in on the preview. All four are additive and safe with the current `main`; take a backup first (§9.3).
+1. **Approval to apply migrations 0003 → 0007 to the Supabase project** (the one Production and Preview share). This is the only thing blocking sign-in on the preview. All four are additive and safe with the current `main`; take a backup first (§9.3).
 2. **Set `PIN_PEPPER`** in Vercel (Production + Preview, different values) before PINs are issued.
-3. **Round 2 rules:** duration, problem(s), twist yes/no, jury criteria and maxima, AI score yes/no, Round 1/Round 2 weights — enter them on Round 2 → Settings.
+3. **Round 2:** import the problem pack and save the settings (defaults follow your format). Confirm whether Round 1 should count at all in the final (default: no, Round 2 alone decides).
 4. **Keep the room access code in addition to the PIN?** It is currently required, and it stops a team logging in from outside the hall.
 5. **Which PS IDs are Common A and Common B?** Mark `CH-*` / `GK-001…005` as test? (Recommended.)
 6. **Workbook fixes:** the `CRW-034` duplicate ID, the 5 unrated rows and the 1 blank-category row.

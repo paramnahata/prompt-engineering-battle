@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Field, Toggle } from '@/components/ui/Field';
 import { Tabs, TabsContent, TabsList } from '@/components/ui/Tabs';
 import { useToast } from '@/components/ui/Toast';
+import { Podium } from '@/components/results/Podium';
 
 const LOGIN = organizerLogin('/admin/results');
 type Scope = 'round1' | 'final';
@@ -36,7 +37,7 @@ export default function ResultsClient() {
     <div>
       <PageHeader title="Results" description="Compute scores, review rankings and ties, then decide exactly what students can see. Nothing is visible to students until you publish it." />
       <Tabs defaultValue="round1">
-        <TabsList items={[{ value: 'round1', label: 'Round 1' }, { value: 'final', label: 'Final (Round 1 + 2)' }]} />
+        <TabsList items={[{ value: 'round1', label: 'Round 1' }, { value: 'final', label: 'Final & winners' }]} />
         <TabsContent value="round1"><Round1Results pub={pub} onPublished={loadPub} /></TabsContent>
         <TabsContent value="final"><FinalResults pub={pub} onPublished={loadPub} /></TabsContent>
       </Tabs>
@@ -182,7 +183,7 @@ function FinalResults({ pub, onPublished }: { pub: PubVM | null; onPublished: ()
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_24rem]">
       <div className="space-y-5">
-        <Panel title="Compute final results" description="Final = Round 1 × weight + Round 2 × weight (weights and Round 2 scoring are set in Round 2 → Settings). Ties share a rank.">
+        <Panel title="Compute final results" description="Round 2 = average jury marks + system (AI) score. Final = Round 1 × weight + Round 2 × weight (set in Round 2 → Settings). Ties are broken by the jury score, then the system score, then Round 1.">
           <Button variant="primary" icon={<Calculator className="h-4 w-4" />} loading={busy} onClick={() => void compute(false)}>{rows?.length ? 'Recompute' : 'Compute final results'}</Button>
           {incomplete && (
             <Alert tone="warning" className="mt-4" title="Some scores are not final yet" action={<Button size="sm" variant="danger" onClick={() => void compute(true)}>Compute anyway</Button>}>
@@ -192,12 +193,19 @@ function FinalResults({ pub, onPublished }: { pub: PubVM | null; onPublished: ()
             </Alert>
           )}
         </Panel>
+        {rows && rows.length > 0 && (
+          <Panel title="Winners" description={pub?.settings?.final?.published ? 'Published — students and the projector show this.' : 'Not published yet. Check the ranking, then publish to declare the winners.'}>
+            <Podium winners={rows.filter((r) => r.rank <= 3).map((r) => { const e = one(r.entry); return {
+              rank: r.rank, entryNumber: e?.entry_number ?? null, teamName: e?.team_name ?? null,
+              members: [...(e?.team_members ?? [])].sort((a, b) => a.member_position - b.member_position).map((m) => m.full_name), score: Number(r.final_score) }; })} />
+          </Panel>
+        )}
         <Panel title="Final ranking" actions={<><ExportLink type="final_results">Final CSV</ExportLink><ExportLink type="jury_scores">Jury scores CSV</ExportLink><ExportLink type="round2_work">Round 2 work CSV</ExportLink></>} bodyClassName="p-0">
           {!rows ? <div className="p-5"><SkeletonRows /></div> : rows.length === 0 ? (
             <div className="p-5"><EmptyState icon={<Trophy className="h-6 w-6" />} title="No final results yet">End Round 2 and finish jury scoring, then compute.</EmptyState></div>
           ) : (
             <div className="overflow-x-auto"><table className="peb-table min-w-[640px]">
-              <thead><tr><th>Rank</th><th>Entry</th><th>Team</th><th className="text-right">Round 1</th><th className="text-right">Jury</th><th className="text-right">AI</th><th className="text-right">Round 2</th><th className="text-right">Final</th></tr></thead>
+              <thead><tr><th>Rank</th><th>Entry</th><th>Team</th><th className="text-right">Round 1</th><th className="text-right">Jury</th><th className="text-right">System</th><th className="text-right">Round 2</th><th className="text-right">Final</th></tr></thead>
               <tbody>{rows.map((r) => { const e = one(r.entry); return (
                 <tr key={r.entry_id}>
                   <td className="tabular">{r.rank}{isTie(r.rank) && <Badge tone="amber" className="ml-2">tie</Badge>}</td>

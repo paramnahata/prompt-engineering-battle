@@ -15,10 +15,15 @@ const fields = z.object({
   constraints: optText(5000),
   expected_output: optText(10_000),
   evaluation_criteria: optText(5000),
+  category: optText(120),
+  difficulty: optText(60),
+  twist_title: optText(200),
+  twist_description: optText(10_000),
+  sample_prompt: optText(10_000),
   active: z.boolean().optional(),
 });
 
-const SELECT = 'id, problem_code, title, problem_statement, instructions, constraints, expected_output, evaluation_criteria, active, created_at, updated_at';
+const SELECT = 'id, problem_code, title, problem_statement, instructions, constraints, expected_output, evaluation_criteria, category, difficulty, twist_title, twist_description, sample_prompt, active, created_at, updated_at';
 
 /** Round 2 problems. Teams get a snapshot at start, so edits never change work in progress. */
 export async function GET() {
@@ -27,7 +32,7 @@ export async function GET() {
   try {
     const db = supabaseAdmin();
     const [{ data, error }, { data: used }] = await Promise.all([
-      db.from('round2_problems').select(SELECT).order('created_at'),
+      db.from('round2_problems').select(SELECT).order('problem_code').order('created_at'),
       db.from('round2_assignments').select('problem_id').limit(1000),
     ]);
     if (error) throw error;
@@ -42,7 +47,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const auth = await requireApiRole(['admin']);
   if (!auth.ok) return auth.response;
-  const body = await readJson(req, fields, 48 * 1024);
+  const body = await readJson(req, fields, 96 * 1024);
   if (!body.ok) return body.response;
   try {
     const db = supabaseAdmin();
@@ -61,7 +66,7 @@ const patchSchema = fields.partial().extend({ id: z.string().uuid() });
 export async function PATCH(req: NextRequest) {
   const auth = await requireApiRole(['admin']);
   if (!auth.ok) return auth.response;
-  const body = await readJson(req, patchSchema, 48 * 1024);
+  const body = await readJson(req, patchSchema, 96 * 1024);
   if (!body.ok) return body.response;
   const { id, ...changes } = body.data;
   try {

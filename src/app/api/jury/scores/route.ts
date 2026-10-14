@@ -7,18 +7,27 @@ import { readJson, rpcResponse, serverError } from '@/lib/http';
 export const dynamic = 'force-dynamic';
 
 const n = z.number().finite().min(0).max(100).optional();
+const criteriaScores = z.object({ understanding: n, response_quality: n, adaptability: n, interaction: n }).strict();
+// Question mode: the question the judge asked (their own or a suggested one) and its mark.
+const questionScores = z.object({
+  questions: z.array(z.object({
+    question: z.string().trim().min(1).max(500),
+    mark: z.number().finite().min(0).max(100),
+    source: z.enum(['own', 'suggested']).default('own'),
+  }).strict()).min(1).max(10),
+}).strict();
 const bodySchema = z.object({
   entryId: z.string().uuid(),
-  scores: z.object({ understanding: n, response_quality: n, adaptability: n, interaction: n }).strict(),
+  scores: z.union([questionScores, criteriaScores]),
   notes: z.string().max(4000).optional(),
   lock: z.boolean().default(false),
 });
 
-/** A judge saves (and optionally locks) their own score; limits come from the Round 2 settings, checked in SQL. */
+/** A judge saves (and optionally locks) their own score — per criterion or per question, as set in Round 2 settings; limits are checked in SQL. */
 export async function PUT(req: NextRequest) {
   const auth = await requireApiRole(['judge']);
   if (!auth.ok) return auth.response;
-  const body = await readJson(req, bodySchema, 8 * 1024);
+  const body = await readJson(req, bodySchema, 16 * 1024);
   if (!body.ok) return body.response;
   try {
     const { data, error } = await supabaseAdmin().rpc('jury_save_score', {

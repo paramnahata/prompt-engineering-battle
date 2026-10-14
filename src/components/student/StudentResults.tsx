@@ -59,6 +59,11 @@ export default function StudentResults({ entryNumber }: { entryNumber: number | 
                 <div>
                   <div className="flex items-center gap-2 text-sm text-muted"><Trophy className="h-4 w-4 text-amber-300" aria-hidden="true" />Final standings</div>
                   {fin.finalist ? <>
+                    {fin.rank != null && fin.rank <= 3 && (
+                      <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-amber-300/50 bg-amber-400/10 px-3 py-1 text-sm font-semibold text-amber-100">
+                        <Trophy className="h-4 w-4" aria-hidden="true" />{fin.rank === 1 ? 'Winner — 1st place' : fin.rank === 2 ? 'Runner-up — 2nd place' : '3rd place'}
+                      </div>
+                    )}
                     {fin.rank != null && <div className="mt-1 font-display text-7xl font-semibold leading-none tabular text-white">#{fin.rank}<span className="ml-2 text-xl font-normal text-muted">of {fin.totalRanked}</span></div>}
                     {fin.finalScore != null && <p className="mt-3 text-slate-200">Final score <span className="font-semibold text-white tabular">{Number(fin.finalScore).toFixed(1)}</span> · Round 1 {Number(fin.round1Score).toFixed(1)} · Round 2 {Number(fin.round2Score).toFixed(1)}</p>}
                   </> : <p className="mt-2 text-slate-200">Final results are out. Your team competed in Round 1 only.</p>}

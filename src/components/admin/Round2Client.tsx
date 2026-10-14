@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pause, Play, Square, RotateCcw, Sparkles, Plus, Pencil, Trash2, Users, FileText, Shuffle } from 'lucide-react';
+import { Pause, Play, Square, RotateCcw, Sparkles, Plus, Pencil, Trash2, Users, FileText, Shuffle, Upload } from 'lucide-react';
+import type { ParsedPack } from '@/lib/round2/pack';
 import { usePolling } from '@/hooks/usePolling';
 import { useServerCountdown } from '@/hooks/useServerCountdown';
 import { formatMMSS } from '@/lib/timer';
@@ -22,14 +23,14 @@ type Criterion = { key: 'understanding' | 'response_quality' | 'adaptability' | 
 interface Config {
   confirmed?: boolean; savedAt?: string;
   durationMinutes: number; problemMode: 'common' | 'random'; commonProblemId: string | null;
-  twist: { enabled: boolean; mode: 'common' | 'random'; commonTwistId: string | null };
-  jury: { enabled: boolean; criteria: Criterion[] };
+  twist: { enabled: boolean; mode: 'common' | 'random' | 'problem'; commonTwistId: string | null };
+  jury: { enabled: boolean; mode?: 'criteria' | 'questions'; questionCount?: number; questionMax?: number; criteria: Criterion[] };
   ai: { enabled: boolean; maxPoints: number };
   limits: { promptWords: number; outputChars: number; rationaleWords: number };
   final: { round1Weight: number; round2Weight: number };
 }
 interface Preflight { ok: boolean; errors: string[]; warnings: string[]; finalists: number; activeProblems: number; activeTwists: number; activeJudges: number; juryMax: number; config: Config }
-interface ConfigVM { preflight: Preflight; problems: { id: string; problem_code: string | null; title: string; active: boolean }[]; twists: { id: string; title: string; active: boolean }[]; roundStatus: string }
+interface ConfigVM { preflight: Preflight; problems: { id: string; problem_code: string | null; title: string; active: boolean; hasTwist: boolean }[]; twists: { id: string; title: string; active: boolean }[]; roundStatus: string }
 interface Team {
   entryId: string; entryNumber: number | null; teamName: string | null; members: string[]; present: boolean; disqualified: boolean; source: string;
   round1Rank: number | null; round1Score: number | null;
@@ -156,7 +157,7 @@ function ControlTab({ cfg, status, onChanged, toast, goTo }: { cfg: ConfigVM | n
           <div className="mt-5 space-y-2">
             {pre.errors.map((e) => <Alert key={e} tone="error">{e}</Alert>)}
             {pre.warnings.map((w) => <Alert key={w} tone="warning">{w}</Alert>)}
-            {pre.ok && pre.errors.length === 0 && <Alert tone="success">Ready to start: {pre.finalists} finalist(s), {pre.config.problemMode === 'common' ? 'one common problem' : `${pre.activeProblems} problems shared out`}, {pre.config.durationMinutes} minutes.</Alert>}
+            {pre.ok && pre.errors.length === 0 && <Alert tone="success">Ready to start: {pre.finalists} finalist(s), {pre.config.problemMode === 'common' ? 'one common problem' : `${pre.activeProblems} problems shared out (one per team)`}, {pre.config.durationMinutes} minutes{pre.config.twist.enabled ? (pre.config.twist.mode === 'problem' ? ', each team’s own twist' : ', a surprise twist') : ''}.</Alert>}
             {!pre.config.confirmed && <Button size="sm" onClick={() => goTo('settings')}>Review settings</Button>}
           </div>
         )}
@@ -207,7 +208,7 @@ function ControlTab({ cfg, status, onChanged, toast, goTo }: { cfg: ConfigVM | n
       </ConfirmDialog>
       <ConfirmDialog open={confirm === 'reveal_twist'} onOpenChange={(o) => !o && setConfirm(null)} title="Reveal the surprise twist?" confirmLabel="Reveal twist"
         onConfirm={() => run('reveal_twist')}>
-        <p>Every team that has not finished gets the twist now. Their first attempt is locked as-is and they continue in the refinement stage. This cannot be undone.</p>
+        <p>{cfg?.preflight.config.twist.mode === 'problem' ? 'Every team that has not finished gets the twist written for its own problem.' : 'Every team that has not finished gets the twist now.'} Their first attempt is locked as-is and they continue in the refinement stage. This cannot be undone.</p>
       </ConfirmDialog>
       <ConfirmDialog open={confirm === 'stop'} onOpenChange={(o) => !o && setConfirm(null)} title="Stop Round 2 now?" tone="danger" confirmLabel="Stop and submit everything"
         onConfirm={() => run('stop')}>
@@ -275,7 +276,8 @@ function SettingsTab({ vm, onSaved }: { vm: ConfigVM; onSaved: () => Promise<voi
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { setC(structuredClone(vm.preflight.config)); }, [vm.preflight.config]);
-  const juryMax = c.jury.enabled ? c.jury.criteria.reduce((a, x) => a + (Number(x.max) || 0), 0) : 0;
+  const questionMode = c.jury.mode === 'questions';
+  const juryMax = !c.jury.enabled ? 0 : questionMode ? (Number(c.jury.questionCount) || 0) * (Number(c.jury.questionMax) || 0) : c.jury.criteria.reduce((a, x) => a + (Number(x.max) || 0), 0);
   const r2Max = juryMax + (c.ai.enabled ? Number(c.ai.maxPoints) || 0 : 0);
   const finalMax = 200 * (Number(c.final.round1Weight) || 0) + r2Max * (Number(c.final.round2Weight) || 0);
 
@@ -303,7 +305,7 @@ function SettingsTab({ vm, onSaved }: { vm: ConfigVM; onSaved: () => Promise<voi
         <div className="grid gap-5 lg:grid-cols-2">
           <Panel title="Time and problem">
             <div className="space-y-4">
-              <Field id="r2-duration" label="Round length"><NumberInput id="r2-duration" value={c.durationMinutes} min={5} max={240} suffix="minutes" onChange={(n) => set('durationMinutes', n)} /></Field>
+              <Field id="r2-duration" label="Round length" help="Your format: 20–30 minutes, including the twist and jury questions."><NumberInput id="r2-duration" value={c.durationMinutes} min={5} max={240} suffix="minutes" onChange={(n) => set('durationMinutes', n)} /></Field>
               <div>
                 <span className="peb-label">Which problem do teams get?</span>
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -330,9 +332,15 @@ function SettingsTab({ vm, onSaved }: { vm: ConfigVM; onSaved: () => Promise<voi
               description="Teams submit a first attempt; when you reveal the twist they refine it into their final answer." />
             {c.twist.enabled && (
               <div className="mt-3 space-y-3">
-                <select aria-label="Twist mode" className="peb-input" value={c.twist.mode} onChange={(e) => set('twist', { ...c.twist, mode: e.target.value as 'common' | 'random' })}>
-                  <option value="common">Same twist for everyone</option><option value="random">Shared out from the active twists</option>
+                <select aria-label="Twist mode" className="peb-input" value={c.twist.mode} onChange={(e) => set('twist', { ...c.twist, mode: e.target.value as Config['twist']['mode'] })}>
+                  <option value="problem">Each team gets its own problem’s twist (parallel variant)</option>
+                  <option value="common">Same twist for everyone</option><option value="random">Shared out from the twist list</option>
                 </select>
+                {c.twist.mode === 'problem' && (() => {
+                  const missing = vm.problems.filter((p) => p.active && !p.hasTwist).length;
+                  return missing ? <Alert tone="warning">{missing} active problem(s) have no twist yet — add one in the Problems tab.</Alert>
+                    : <p className="peb-help">The twist comes from each problem (Problems tab → “What changes”). Reveal it from “Run the round” when you are ready.</p>;
+                })()}
                 {c.twist.mode === 'common' && (
                   <select aria-label="Common twist" className="peb-input" value={c.twist.commonTwistId ?? ''} onChange={(e) => set('twist', { ...c.twist, commonTwistId: e.target.value || null })}>
                     <option value="">Choose a twist…</option>
@@ -345,24 +353,41 @@ function SettingsTab({ vm, onSaved }: { vm: ConfigVM; onSaved: () => Promise<voi
         </div>
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <Panel title="Jury scoring" description={c.jury.enabled ? `Each judge scores out of ${juryMax}; teams get the average of their judges.` : 'Jury scoring is off.'}>
+          <Panel title="Jury scoring" description={c.jury.enabled ? `Each judge marks out of ${juryMax}; a team gets the average of its judges.` : 'Jury scoring is off.'}>
             <Toggle id="r2-jury" checked={c.jury.enabled} onChange={(v) => set('jury', { ...c.jury, enabled: v })} label="Judges score teams" />
             {c.jury.enabled && (
-              <div className="mt-3 space-y-2">
-                {c.jury.criteria.map((cr, i) => (
-                  <div key={cr.key} className="flex items-center gap-2">
-                    <input aria-label={`Criterion ${i + 1} name`} className="peb-input" value={cr.label} maxLength={60}
-                      onChange={(e) => set('jury', { ...c.jury, criteria: c.jury.criteria.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} />
-                    <span className="text-xs text-muted">max</span>
-                    <input aria-label={`Criterion ${i + 1} maximum`} type="number" className="peb-input w-20" min={0} max={100} value={cr.max}
-                      onChange={(e) => set('jury', { ...c.jury, criteria: c.jury.criteria.map((x, j) => (j === i ? { ...x, max: Number(e.target.value) } : x)) })} />
+              <div className="mt-3 space-y-3">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {([['questions', 'Marks per question', 'Judges ask questions in person and mark each answer.'], ['criteria', 'Fixed criteria', 'Four named criteria, each with a maximum.']] as const).map(([v, l, d]) => (
+                    <button key={v} type="button" onClick={() => set('jury', { ...c.jury, mode: v, questionCount: c.jury.questionCount ?? 5, questionMax: c.jury.questionMax ?? 10 })} aria-pressed={(c.jury.mode ?? 'criteria') === v}
+                      className={`rounded-lg border p-3 text-left text-sm ${(c.jury.mode ?? 'criteria') === v ? 'border-violet-400/60 bg-violet-500/10 text-white' : 'border-line text-slate-300 hover:border-slate-600'}`}>
+                      <div className="font-medium">{l}</div><div className="mt-0.5 text-xs text-muted">{d}</div>
+                    </button>
+                  ))}
+                </div>
+                {questionMode ? (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field id="r2-qcount" label="Questions per team" help="1–10. Judges must mark all of them to lock."><NumberInput id="r2-qcount" value={c.jury.questionCount ?? 5} min={1} max={10} suffix="questions" onChange={(n) => set('jury', { ...c.jury, questionCount: n })} /></Field>
+                    <Field id="r2-qmax" label="Marks per question"><NumberInput id="r2-qmax" value={c.jury.questionMax ?? 10} min={1} max={100} suffix="marks" onChange={(n) => set('jury', { ...c.jury, questionMax: n })} /></Field>
                   </div>
-                ))}
-                <p className="peb-help">Set a maximum of 0 to leave a criterion out.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {c.jury.criteria.map((cr, i) => (
+                      <div key={cr.key} className="flex items-center gap-2">
+                        <input aria-label={`Criterion ${i + 1} name`} className="peb-input" value={cr.label} maxLength={60}
+                          onChange={(e) => set('jury', { ...c.jury, criteria: c.jury.criteria.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} />
+                        <span className="text-xs text-muted">max</span>
+                        <input aria-label={`Criterion ${i + 1} maximum`} type="number" className="peb-input w-20" min={0} max={100} value={cr.max}
+                          onChange={(e) => set('jury', { ...c.jury, criteria: c.jury.criteria.map((x, j) => (j === i ? { ...x, max: Number(e.target.value) } : x)) })} />
+                      </div>
+                    ))}
+                    <p className="peb-help">Set a maximum of 0 to leave a criterion out.</p>
+                  </div>
+                )}
               </div>
             )}
           </Panel>
-          <Panel title="AI scoring" description="Optional. Gemini scores the final prompt and output on six criteria, scaled to the points below.">
+          <Panel title="System (AI) score" description="Gemini scores the final prompt and output against the problem’s expected solution, scaled to the points below. Round 2 = jury marks + system score.">
             <Toggle id="r2-ai" checked={c.ai.enabled} onChange={(v) => set('ai', { ...c.ai, enabled: v })} label="Add an AI score" />
             {c.ai.enabled && <Field id="r2-ai-points" label="AI points" className="mt-3"><NumberInput id="r2-ai-points" value={c.ai.maxPoints} min={0} max={200} suffix="points" onChange={(n) => set('ai', { ...c.ai, maxPoints: n })} /></Field>}
           </Panel>
@@ -376,12 +401,13 @@ function SettingsTab({ vm, onSaved }: { vm: ConfigVM; onSaved: () => Promise<voi
               <Field id="r2-rw" label="Explanation"><NumberInput id="r2-rw" value={c.limits.rationaleWords} min={0} max={3000} suffix="words" onChange={(n) => set('limits', { ...c.limits, rationaleWords: n })} /></Field>
             </div>
           </Panel>
-          <Panel title="Final score" description="Final = Round 1 × weight + Round 2 × weight. Ties share a rank.">
+          <Panel title="Final score" description="Final = Round 1 × weight + Round 2 × weight, where Round 2 = jury marks + system score.">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field id="r2-w1" label="Round 1 weight" help="Round 1 is out of 200"><NumberInput id="r2-w1" value={c.final.round1Weight} min={0} max={10} step={0.1} onChange={(n) => set('final', { ...c.final, round1Weight: n })} /></Field>
               <Field id="r2-w2" label="Round 2 weight" help={`Round 2 is out of ${r2Max}`}><NumberInput id="r2-w2" value={c.final.round2Weight} min={0} max={10} step={0.1} onChange={(n) => set('final', { ...c.final, round2Weight: n })} /></Field>
             </div>
             <p className="mt-4 text-sm text-slate-300">Maximum final score: <span className="font-semibold text-white tabular">{Math.round(finalMax * 10) / 10}</span></p>
+            <p className="peb-help mt-1">{Number(c.final.round1Weight) === 0 ? 'Round 1 weight 0: winners are decided by Round 2 (jury + system). Round 1 only breaks exact ties.' : 'Ties are broken by the jury score, then the system score, then Round 1.'}</p>
           </Panel>
         </div>
       </fieldset>
@@ -473,14 +499,22 @@ function FinalistsTab({ locked, onChanged }: { locked: boolean; onChanged: () =>
 }
 
 // ---------------------------------------------------------------------------
-interface Problem { id: string; problem_code: string | null; title: string; problem_statement: string; instructions: string | null; constraints: string | null; expected_output: string | null; evaluation_criteria: string | null; active: boolean; assigned: number }
-const EMPTY_PROBLEM = { problem_code: '', title: '', problem_statement: '', instructions: '', constraints: '', expected_output: '', evaluation_criteria: '', active: true };
+interface Problem {
+  id: string; problem_code: string | null; title: string; problem_statement: string; instructions: string | null; constraints: string | null;
+  expected_output: string | null; evaluation_criteria: string | null; category: string | null; difficulty: string | null;
+  twist_title: string | null; twist_description: string | null; sample_prompt: string | null; active: boolean; assigned: number;
+}
+const PROBLEM_TEXT_FIELDS = ['problem_code', 'title', 'category', 'difficulty', 'problem_statement', 'instructions', 'constraints', 'twist_title', 'twist_description', 'sample_prompt', 'expected_output', 'evaluation_criteria'] as const;
+type ProblemDraft = Record<(typeof PROBLEM_TEXT_FIELDS)[number], string> & { active: boolean; id?: string };
+const EMPTY_PROBLEM: ProblemDraft = { ...Object.fromEntries(PROBLEM_TEXT_FIELDS.map((k) => [k, ''])) as Record<(typeof PROBLEM_TEXT_FIELDS)[number], string>, active: true };
+const toDraft = (p: Problem): ProblemDraft => ({ ...Object.fromEntries(PROBLEM_TEXT_FIELDS.map((k) => [k, p[k] ?? ''])) as Record<(typeof PROBLEM_TEXT_FIELDS)[number], string>, active: p.active, id: p.id });
 
 function ProblemsTab({ onChanged }: { onChanged: () => Promise<void> }) {
   const toast = useToast();
   const [items, setItems] = useState<Problem[] | null>(null);
-  const [editing, setEditing] = useState<(typeof EMPTY_PROBLEM & { id?: string }) | null>(null);
+  const [editing, setEditing] = useState<ProblemDraft | null>(null);
   const [deleting, setDeleting] = useState<Problem | null>(null);
+  const [importing, setImporting] = useState(false);
   const load = useCallback(async () => setItems((await api<{ problems: Problem[] }>('/api/admin/round2/problems', { loginPath: LOGIN })).problems), []);
   useEffect(() => { load().catch((e) => toast.error(errorMessage(e))); }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
   const save = async () => {
@@ -491,18 +525,38 @@ function ProblemsTab({ onChanged }: { onChanged: () => Promise<void> }) {
     setEditing(null);
     await Promise.all([load(), onChanged()]);
   };
+  const active = items?.filter((p) => p.active) ?? [];
+  const noTwist = active.filter((p) => !p.twist_description?.trim()).length;
   return (
-    <Panel title="Round 2 problems" description="Teams receive a snapshot when the round starts, so later edits never change work in progress. Expected output and criteria are never shown to students."
-      actions={<Button variant="primary" size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setEditing({ ...EMPTY_PROBLEM })}>Add problem</Button>}>
-      {!items ? <SkeletonRows /> : items.length === 0 ? <EmptyState icon={<FileText className="h-6 w-6" />} title="No problems yet">Add the real-world problem(s) for the final.</EmptyState> : (
+    <Panel title="Round 2 problems" description="Each team gets one problem (shared out evenly) and, when you reveal the twist, that problem's own variant. Teams receive a snapshot at the start, so later edits never change work in progress. Sample prompts and expected solutions are never shown to students."
+      actions={<>
+        <Button size="sm" icon={<Upload className="h-4 w-4" />} onClick={() => setImporting(true)}>Import .docx</Button>
+        <Button variant="primary" size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setEditing({ ...EMPTY_PROBLEM })}>Add problem</Button>
+      </>}>
+      {items && items.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-2 text-xs">
+          <Badge tone="green">{active.length} active</Badge>
+          {noTwist > 0 ? <Badge tone="amber">{noTwist} active without a twist</Badge> : active.length > 0 && <Badge tone="violet">Every active problem has its twist</Badge>}
+        </div>
+      )}
+      {!items ? <SkeletonRows /> : items.length === 0 ? (
+        <EmptyState icon={<FileText className="h-6 w-6" />} title="No problems yet" action={<Button size="sm" icon={<Upload className="h-4 w-4" />} onClick={() => setImporting(true)}>Import a problem pack (.docx)</Button>}>
+          Upload your Round 2 pack: each “Problem NN” with its main statement, parallel variant (the twist), sample prompt and expected solution.
+        </EmptyState>
+      ) : (
         <ul className="divide-y divide-line/60">
           {items.map((p) => (
             <li key={p.id} className="flex flex-wrap items-start gap-3 py-3 first:pt-0 last:pb-0">
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2"><span className="font-medium text-white">{p.title}</span>{p.problem_code && <Badge>{p.problem_code}</Badge>}{!p.active && <Badge tone="amber">Disabled</Badge>}{p.assigned > 0 && <Badge tone="blue">Given to {p.assigned}</Badge>}</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {p.problem_code && <Badge>{p.problem_code}</Badge>}<span className="font-medium text-white">{p.title}</span>
+                  {p.category && <span className="text-xs text-muted">{p.category}{p.difficulty ? ` · ${p.difficulty}` : ''}</span>}
+                  {!p.active && <Badge tone="amber">Disabled</Badge>}{p.assigned > 0 && <Badge tone="blue">Given to {p.assigned}</Badge>}
+                  {p.twist_description ? <Badge tone="violet">Twist ready</Badge> : <Badge tone="amber">No twist</Badge>}
+                </div>
                 <p className="mt-1 line-clamp-2 text-sm text-muted">{p.problem_statement}</p>
               </div>
-              <Button size="sm" variant="ghost" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditing({ id: p.id, problem_code: p.problem_code ?? '', title: p.title, problem_statement: p.problem_statement, instructions: p.instructions ?? '', constraints: p.constraints ?? '', expected_output: p.expected_output ?? '', evaluation_criteria: p.evaluation_criteria ?? '', active: p.active })}>Edit</Button>
+              <Button size="sm" variant="ghost" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditing(toDraft(p))}>Edit</Button>
               <Button size="sm" variant="ghost" icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => setDeleting(p)}>{p.assigned ? 'Disable' : 'Delete'}</Button>
             </li>
           ))}
@@ -511,16 +565,33 @@ function ProblemsTab({ onChanged }: { onChanged: () => Promise<void> }) {
       <EditorModal open={!!editing} title={editing?.id ? 'Edit problem' : 'Add problem'} onClose={() => setEditing(null)} onSave={save}
         valid={!!editing?.problem_code.trim() && !!editing?.title.trim() && !!editing?.problem_statement.trim()}>
         {editing && <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-[10rem_1fr]">
+          <div className="grid gap-4 sm:grid-cols-[8rem_1fr]">
             <Field id="p-code" label="Problem ID"><input id="p-code" className="peb-input" value={editing.problem_code} maxLength={40} onChange={(e) => setEditing({ ...editing, problem_code: e.target.value })} /></Field>
             <Field id="p-title" label="Title"><input id="p-title" className="peb-input" value={editing.title} maxLength={200} onChange={(e) => setEditing({ ...editing, title: e.target.value })} /></Field>
           </div>
-          {([['problem_statement', 'Problem statement (shown to teams)', 6], ['instructions', 'Instructions (shown to teams)', 3], ['constraints', 'Constraints (shown to teams)', 3], ['expected_output', 'Expected output (jury and AI only)', 4], ['evaluation_criteria', 'Evaluation criteria (jury and AI only)', 3]] as const).map(([k, l, rows]) => (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field id="p-category" label="Category"><input id="p-category" className="peb-input" value={editing.category} maxLength={120} onChange={(e) => setEditing({ ...editing, category: e.target.value })} /></Field>
+            <Field id="p-difficulty" label="Difficulty"><input id="p-difficulty" className="peb-input" value={editing.difficulty} maxLength={60} onChange={(e) => setEditing({ ...editing, difficulty: e.target.value })} /></Field>
+          </div>
+          {([
+            ['problem_statement', 'Problem statement (shown to the team)', 6], ['instructions', 'Instructions (shown to the team)', 2], ['constraints', 'Constraints (shown to the team)', 2],
+          ] as const).map(([k, l, rows]) => (
             <Field key={k} id={`p-${k}`} label={l}><textarea id={`p-${k}`} rows={rows} className="peb-input" value={editing[k]} onChange={(e) => setEditing({ ...editing, [k]: e.target.value })} /></Field>
           ))}
-          <Toggle id="p-active" checked={editing.active} onChange={(v) => setEditing({ ...editing, active: v })} label="Active" description="Only active problems can be chosen or shared out." />
+          <div className="rounded-lg border border-amber-400/25 bg-amber-500/[0.06] p-3.5 space-y-3">
+            <div className="text-sm font-medium text-amber-100">Surprise twist for this problem (hidden until you reveal it)</div>
+            <Field id="p-twist_title" label="Twist title" help="Optional. Default: “The scenario changes”."><input id="p-twist_title" className="peb-input" value={editing.twist_title} maxLength={200} onChange={(e) => setEditing({ ...editing, twist_title: e.target.value })} /></Field>
+            <Field id="p-twist_description" label="What changes (the parallel variant)"><textarea id="p-twist_description" rows={3} className="peb-input" value={editing.twist_description} onChange={(e) => setEditing({ ...editing, twist_description: e.target.value })} /></Field>
+          </div>
+          {([
+            ['sample_prompt', 'Sample expected prompt (jury and AI only)', 4], ['expected_output', 'Expected solution (jury and AI only)', 4], ['evaluation_criteria', 'Evaluation criteria (jury and AI only)', 3],
+          ] as const).map(([k, l, rows]) => (
+            <Field key={k} id={`p-${k}`} label={l}><textarea id={`p-${k}`} rows={rows} className="peb-input" value={editing[k]} onChange={(e) => setEditing({ ...editing, [k]: e.target.value })} /></Field>
+          ))}
+          <Toggle id="p-active" checked={editing.active} onChange={(v) => setEditing({ ...editing, active: v })} label="Active" description="Only active problems are shared out to teams." />
         </div>}
       </EditorModal>
+      <PackImportModal open={importing} existing={items ?? []} onClose={() => setImporting(false)} onImported={async () => { setImporting(false); await Promise.all([load(), onChanged()]); }} />
       <ConfirmDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)} title={deleting?.assigned ? 'Disable this problem?' : 'Delete this problem?'} tone="danger"
         confirmLabel={deleting?.assigned ? 'Disable' : 'Delete'} onConfirm={async () => {
           const r = await api<{ disabled?: boolean }>('/api/admin/round2/problems', { method: 'DELETE', body: { id: deleting!.id, confirm: 'DELETE' }, loginPath: LOGIN });
@@ -530,6 +601,108 @@ function ProblemsTab({ onChanged }: { onChanged: () => Promise<void> }) {
         <p>{deleting?.assigned ? 'This problem was given to teams, so it is kept for history and disabled instead.' : `“${deleting?.title}” will be removed permanently.`}</p>
       </ConfirmDialog>
     </Panel>
+  );
+}
+
+function PackImportModal({ open, existing, onClose, onImported }: { open: boolean; existing: Problem[]; onClose: () => void; onImported: () => Promise<void> }) {
+  const toast = useToast();
+  const [parsed, setParsed] = useState<ParsedPack | null>(null);
+  const [fileName, setFileName] = useState('');
+  const [reading, setReading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [disableOthers, setDisableOthers] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+  useEffect(() => { if (open) { setParsed(null); setFileName(''); setError(null); setPreview(null); } }, [open]);
+  const existingCodes = useMemo(() => new Set(existing.map((p) => (p.problem_code ?? '').toUpperCase())), [existing]);
+  const others = existing.filter((p) => p.active && parsed && !parsed.problems.some((x) => x.problem_code === (p.problem_code ?? '').toUpperCase())).length;
+
+  const read = async (file: File) => {
+    setError(null); setParsed(null); setFileName(file.name);
+    if (!/\.docx$/i.test(file.name)) { setError('Choose a Word .docx file (save older .doc files as .docx first).'); return; }
+    if (file.size > 10 * 1024 * 1024) { setError('The file is larger than 10 MB.'); return; }
+    setReading(true);
+    try {
+      const { readDocxParagraphs, parseProblemPack } = await import('@/lib/round2/pack');
+      const result = parseProblemPack(await readDocxParagraphs(await file.arrayBuffer()));
+      setParsed(result);
+      if (!result.problems.length) setError(result.warnings[0] ?? 'No problems found.');
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setReading(false);
+    }
+  };
+  const publish = async () => {
+    if (!parsed) return;
+    setBusy(true); setError(null);
+    try {
+      const r = await api<{ created: number; updated: number; disabled: number; active: number }>('/api/admin/round2/problems/import',
+        { method: 'POST', body: { problems: parsed.problems, disableOthers }, loginPath: LOGIN });
+      toast.success(`Imported: ${r.created} new, ${r.updated} updated${r.disabled ? `, ${r.disabled} other problem(s) disabled` : ''}. ${r.active} active.`);
+      await onImported();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const shown = parsed?.problems.find((p) => p.problem_code === preview) ?? null;
+  return (
+    <Modal open={open} onOpenChange={(o) => !o && !busy && onClose()} title="Import a Round 2 problem pack" size="xl"
+      description="The .docx is read in your browser; only the extracted text is sent. Re-importing updates problems with the same number."
+      footer={<><Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button variant="primary" loading={busy} disabled={!parsed?.problems.length} onClick={() => void publish()}>Import {parsed?.problems.length || ''} problem{parsed?.problems.length === 1 ? '' : 's'}</Button></>}>
+      <div className="space-y-4">
+        <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-line px-4 py-6 text-center hover:border-violet-400/50">
+          <Upload className="h-6 w-6 text-violet-300" aria-hidden="true" />
+          <span className="text-sm text-slate-200">{reading ? 'Reading…' : fileName || 'Choose the .docx file'}</span>
+          <span className="text-xs text-muted">“Problem 01: Title”, then A. main statement · B. parallel variant (twist) · C. sample prompt · D. expected solution</span>
+          <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) void read(f); e.target.value = ''; }} />
+        </label>
+        {error && <Alert tone="error">{error}</Alert>}
+        {parsed && parsed.problems.length > 0 && (
+          <>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Badge tone="green">{parsed.problems.length} problems</Badge>
+              <Badge tone="violet">{parsed.problems.filter((p) => p.twist_description).length} with a twist</Badge>
+              <Badge>{parsed.problems.filter((p) => existingCodes.has(p.problem_code)).length} update existing</Badge>
+              {parsed.criteria && <Badge tone="blue">Shared jury rubric found</Badge>}
+            </div>
+            {[...parsed.skipped, ...parsed.warnings].length > 0 && (
+              <Alert tone="warning" title="Check these before importing"><ul className="list-disc space-y-0.5 pl-4">{[...parsed.skipped, ...parsed.warnings].slice(0, 12).map((w) => <li key={w}>{w}</li>)}</ul></Alert>
+            )}
+            <div className="max-h-72 overflow-auto rounded-lg border border-line">
+              <table className="peb-table">
+                <thead><tr><th>ID</th><th>Title</th><th>Category</th><th>Twist</th><th>Jury refs</th><th><span className="sr-only">Preview</span></th></tr></thead>
+                <tbody>{parsed.problems.map((p) => (
+                  <tr key={p.problem_code}>
+                    <td className="font-semibold tabular">{p.problem_code}{existingCodes.has(p.problem_code) && <span className="ml-1 text-xs text-muted">update</span>}</td>
+                    <td className="text-slate-100">{p.title}</td>
+                    <td className="text-xs text-muted">{p.category ?? '—'}{p.difficulty ? ` · ${p.difficulty}` : ''}</td>
+                    <td>{p.twist_description ? <Badge tone="violet">Yes</Badge> : <Badge tone="amber">No</Badge>}</td>
+                    <td className="text-xs text-muted">{[p.sample_prompt && 'prompt', p.expected_output && 'solution'].filter(Boolean).join(' + ') || '—'}</td>
+                    <td><Button size="sm" variant="ghost" onClick={() => setPreview(preview === p.problem_code ? null : p.problem_code)}>{preview === p.problem_code ? 'Hide' : 'View'}</Button></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+            {shown && (
+              <div className="grid gap-3 md:grid-cols-2">
+                {([['Main statement (team sees)', shown.problem_statement], ['Twist / parallel variant', shown.twist_description], ['Sample prompt (jury)', shown.sample_prompt], ['Expected solution (jury)', shown.expected_output]] as const).map(([l, t]) => (
+                  <div key={l}><div className="mb-1 text-xs font-medium text-muted">{l}</div><div className="peb-inset max-h-40 overflow-y-auto whitespace-pre-wrap px-3 py-2 text-xs leading-5 text-slate-200">{t || '—'}</div></div>
+                ))}
+              </div>
+            )}
+            {others > 0 && (
+              <Toggle id="pack-disable-others" checked={disableOthers} onChange={setDisableOthers}
+                label={`Disable the ${others} other active problem${others === 1 ? '' : 's'}`} description="So teams only get problems from this pack. Nothing is deleted; you can re-enable them later." />
+            )}
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }
 

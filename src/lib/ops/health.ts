@@ -10,7 +10,7 @@ import { isSchemaMissingError } from '@/lib/db-errors';
  */
 export const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_SECRET_KEY', 'SESSION_SECRET', 'EVENT_SECRET'] as const;
 export const RECOMMENDED_ENV = ['PIN_PEPPER'] as const;
-export const EXPECTED_SCHEMA_VERSION = 6;
+export const EXPECTED_SCHEMA_VERSION = 7;
 
 export interface Health {
   ok: boolean;

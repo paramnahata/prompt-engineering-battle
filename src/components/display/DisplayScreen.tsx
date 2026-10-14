@@ -5,6 +5,7 @@ import { useServerCountdown } from '@/hooks/useServerCountdown';
 import { usePolling } from '@/hooks/usePolling';
 import { formatMMSS } from '@/lib/timer';
 import AccessCodePanel from '@/components/admin/AccessCodePanel';
+import { Podium, type Winner } from '@/components/results/Podium';
 
 interface DisplayData {
   registered: number;
@@ -13,6 +14,7 @@ interface DisplayData {
   round: { round_number: number; status: string; round_end_at: string | null } | null;
   round2: { round_number: number; status: string; round_end_at: string | null } | null;
   announcements: { id: string; message: string }[];
+  winners?: Winner[];
   serverNow: string;
 }
 
@@ -59,7 +61,12 @@ export default function DisplayScreen() {
       </header>
 
       <section className="flex flex-1 flex-col items-center justify-center gap-4">
-        {round ? (
+        {data?.winners?.length ? (
+          <div className="w-full max-w-5xl">
+            <div className="mb-6 text-center font-display text-5xl font-semibold text-white">And the winners are…</div>
+            <Podium winners={data.winners} size="lg" />
+          </div>
+        ) : round ? (
           <>
             <div className="text-sm text-muted">Round {round.round_number} — {STATUS_LABEL[round.status] ?? round.status}</div>
             {round.status === 'running' && secondsLeft !== null ? (
@@ -77,7 +84,7 @@ export default function DisplayScreen() {
         )}
       </section>
 
-      <div className="mx-auto w-full max-w-md"><AccessCodePanel large /></div>
+      {!data?.winners?.length && <div className="mx-auto w-full max-w-md"><AccessCodePanel large /></div>}
 
       <section className="grid grid-cols-3 gap-4">
         {[['Registered', data?.registered], ['Checked in', data?.present], ['Answers submitted', data?.submitted]].map(([label, value]) => (

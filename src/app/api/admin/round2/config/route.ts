@@ -14,12 +14,13 @@ export async function GET() {
     const db = supabaseAdmin();
     const [pre, problems, twists, round] = await Promise.all([
       db.rpc('round2_preflight'),
-      db.from('round2_problems').select('id, problem_code, title, active').order('created_at'),
+      db.from('round2_problems').select('id, problem_code, title, active, twist_description').order('problem_code').order('created_at'),
       db.from('surprise_twists').select('id, title, active').order('created_at'),
       db.from('rounds').select('status').eq('round_number', 2).maybeSingle(),
     ]);
     if (pre.error) throw pre.error;
-    return jsonOk({ preflight: pre.data, problems: problems.data ?? [], twists: twists.data ?? [], roundStatus: round.data?.status ?? 'not_started' });
+    const list = (problems.data ?? []).map(({ twist_description, ...p }) => ({ ...p, hasTwist: Boolean(twist_description?.trim()) }));
+    return jsonOk({ preflight: pre.data, problems: list, twists: twists.data ?? [], roundStatus: round.data?.status ?? 'not_started' });
   } catch (err) {
     return serverError('round2 config', err, 'Could not load Round 2 settings.');
   }
@@ -34,8 +35,14 @@ const configSchema = z.object({
   durationMinutes: z.number().int().min(5).max(240),
   problemMode: z.enum(['common', 'random']),
   commonProblemId: z.string().uuid().nullable(),
-  twist: z.object({ enabled: z.boolean(), mode: z.enum(['common', 'random']), commonTwistId: z.string().uuid().nullable() }),
-  jury: z.object({ enabled: z.boolean(), criteria: z.array(criterion).length(4) }),
+  twist: z.object({ enabled: z.boolean(), mode: z.enum(['common', 'random', 'problem']), commonTwistId: z.string().uuid().nullable() }),
+  jury: z.object({
+    enabled: z.boolean(),
+    mode: z.enum(['criteria', 'questions']).default('criteria'),
+    questionCount: z.number().int().min(1).max(10).default(5),
+    questionMax: z.number().min(1).max(100).default(10),
+    criteria: z.array(criterion).length(4),
+  }),
   ai: z.object({ enabled: z.boolean(), maxPoints: z.number().min(0).max(200) }),
   limits: z.object({ promptWords: z.number().int().min(20).max(5000), outputChars: z.number().int().min(100).max(50000), rationaleWords: z.number().int().min(0).max(3000) }),
   final: z.object({ round1Weight: z.number().min(0).max(10), round2Weight: z.number().min(0).max(10) }),
