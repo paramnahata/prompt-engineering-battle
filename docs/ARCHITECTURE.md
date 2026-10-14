@@ -25,10 +25,10 @@
    → signed HTTP-only cookie session (`src/lib/auth/session.ts`) with a
    `role` claim. No JWT library needed — HMAC-signed payload, verified
    server-side on every request.
-2. **Student**: Entry ID + rotating Event Access Code
-   (`src/lib/security/access-code.ts`, HMAC-derived from `EVENT_SECRET` and
-   a 60s time window, server-clock authoritative) → same cookie session
-   pattern with `role: 'student'` and `userId: entries.id`.
+2. **Student**: entry number + team PIN (scrypt + pepper, `src/lib/auth/pin.ts`);
+   the entry must be checked in at the desk and only one device per entry
+   can be signed in → server-side session (`auth_sessions`) with
+   `role: 'student'`. (The rotating room code was removed in October 2026.)
 3. Every API route calls `requireRole(...)` and re-checks resource
    ownership (e.g. a submission's `entry_id` must equal the session's
    `userId`) — the session role is never trusted alone.

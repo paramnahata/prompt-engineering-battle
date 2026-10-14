@@ -24,7 +24,6 @@ const revoked = new Actor('revoked session');
 type Role = 'student' | 'volunteer' | 'judge' | 'admin';
 const NIL = '00000000-0000-0000-0000-000000000000';
 const ENDPOINTS: { method: string; path: string; body?: unknown; allow: Role[] }[] = [
-  { method: 'GET', path: '/api/access-code', allow: ['volunteer', 'judge', 'admin'] },
   { method: 'GET', path: '/api/display/stats', allow: ['volunteer', 'judge', 'admin'] },
   { method: 'GET', path: '/api/admin/participants', allow: ['volunteer', 'admin'] },
   { method: 'DELETE', path: '/api/admin/participants', body: { confirm: 'nope' }, allow: ['admin'] },
@@ -207,8 +206,7 @@ test('login: rate limits, generic errors, no account enumeration by message, no 
   }
   assert.ok(limited, 'per-account lockout');
 
-  const wrongCode = await anon.req('POST', '/api/student/login', { entryCode: '150', pin: stagingPin(150), accessCode: '0000' === accessCode(env.EVENT_SECRET!) ? '1111' : '0000' });
-  assert.equal(wrongCode.status, 401);
+  assert.equal((await admin.req('GET', '/api/access-code')).status, 404, 'the room code endpoint no longer exists');
   const sqli = await anon.req('POST', '/api/student/login', { entryCode: "1' OR '1'='1", pin: '123456', accessCode: '1234' });
   assert.equal(sqli.status, 400);
 

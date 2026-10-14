@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import AccessCodePanel from './AccessCodePanel';
 import CsvImportPanel from './CsvImportPanel';
 import { EntryEditor, PinSlips, type IssuedPin } from './DeskTools';
 import { usePolling } from '@/hooks/usePolling';
@@ -130,7 +129,6 @@ export default function RegistrationDeskClient({ canImport = false }: { canImpor
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
         <CheckInPanel entries={entries} pending={pending} onSetPresent={setPresent} onIssuePin={(e) => void issuePins(e)} onEdit={canImport ? (e) => setEditing(e) : undefined} issuing={issuing} />
-        <AccessCodePanel />
       </div>
 
       {canImport && <CsvImportPanel onImported={() => void load().catch(() => {})} />}
@@ -255,7 +253,7 @@ function CheckInPanel({ entries, pending, onSetPresent, onIssuePin, onEdit, issu
             <button className="peb-btn-secondary flex-1" onClick={() => onSetPresent(selected, false)} disabled={pending.has(selected.id) || !selected.present}>Mark absent</button>
           </div>
           <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted">
-            <span>Students sign in with entry number <b className="text-white">{selected.entry_number}</b>, their team PIN and the on-screen access code. One device per entry.</span>
+            <span>Students sign in with entry number <b className="text-white">{selected.entry_number}</b>, and their team PIN. One device per entry.</span>
             <button className="shrink-0 underline hover:text-white" onClick={() => void release(selected)}>Release device</button>
           </div>
           {releaseMsg && <p className="mt-2 text-xs text-cyan-200" role="status">{releaseMsg}</p>}

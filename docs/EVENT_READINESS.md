@@ -4,7 +4,7 @@ Branch `hardening/event-readiness` (PR #4), based on `main` @ `0e37ab2` (product
 
 Everything below was verified by running code; the commands and outputs are in §8. Anything that was **not** verified is marked as such.
 
-**Production status:** see §9.3 for exactly which steps have been carried out. Until a step is listed there as done, migrations 0003–0007 are unapplied and `main` is unchanged.
+**Production status (2026-10-15):** migrations 0003–0007 were applied by the organizer in the Supabase SQL editor (one transaction; `app_schema_status()` = v7, nothing missing; 10 entries, 18 members and 104 challenges intact). PR #4 was merged into `main` (`8017a9c`) and the Vercel production deployment is READY with `/api/health` = `database: ok, schemaVersion: 7`. Follow-up (projector redesign, room code removed) is in §0.6.
 
 Contents:
 0. Phase 3: complete platform (login 500 root cause, Round 2, results, redesigned UI, how to test) and the Round 2 event format (§0.5)
@@ -58,7 +58,7 @@ Vercel injects its feedback toolbar (`vercel.live`) into **preview** deployments
 ### 0.4 How to test the flows (once the database is migrated)
 **Organizer.** Sign in at `/organizer/login` → Overview shows the setup checklist. Registration desk: import CSV, check teams in, "Generate missing PINs", print slips. Challenge pool: import, choose Common A/B. Round 1: Start → (students work) → Stop → Run evaluation. Results: compute, review ties, publish. Round 2: Problems/Twists → Settings (save) → Finalists ("Use Round 1 qualifiers") → Run the round: Start → Reveal twist → Stop. Jury (judge account): ask, score, lock. Results → Final: compute, publish. Settings: exports, reset preview.
 
-**Student.** `/student/login` with entry number + PIN slip + the 4-digit room code from `/display` → dashboard → Round 1 opens automatically when started → submitted screen → results when published → Round 2 page if a finalist.
+**Student.** `/student/login` with entry number + PIN slip → dashboard → Round 1 opens automatically when started → submitted screen → results when published → Round 2 page if a finalist.
 
 ### 0.5 Round 2 event format (migration 0007)
 The final works the way the organizers described it:
@@ -76,6 +76,10 @@ The final works the way the organizers described it:
 | **Declare the result** | Results → **Final & winners** shows a 1st/2nd/3rd podium. Publishing shows it on the projector (`/display`, "And the winners are…") and each team's results page ("Winner — 1st place"). Nothing is visible before publishing. |
 
 No mechanism exists to pick or adjust winners other than the audited Round 2 score override (admin, with a reason, recorded in the audit log).
+
+### 0.6 Projector screen and sign-in (organizer request, 2026-10-15)
+- **The projector (`/display`) shows only what the whole hall may see:** the round name, a large animated countdown with a progress bar (calm → amber under 5 minutes → red pulse under 1 minute), paused/ended states, "The twist is live" during Round 2, rotating public announcements, and — only after final results are published — an animated winners reveal (3rd, 2nd, then 1st, with confetti). It no longer shows the room code or any registration/check-in/submission counts; `/api/display/stats` no longer returns them either. Animated background, live clock, cursor hidden until the mouse moves, a Full screen button. All motion is disabled for viewers with reduced-motion settings.
+- **Room code removed.** Students sign in with **entry number + team PIN** only. The other protections stay: the entry must be checked in at the desk, one device per entry, 6 wrong PINs lock the entry for 10 minutes, per-IP limits. The code panel was removed from the desk and the `/api/access-code` endpoint deleted. `EVENT_SECRET` is no longer required.
 
 
 ---
@@ -131,8 +135,8 @@ Start, submit and evaluate were multi-request sequences without locks. Double-cl
 ### Phase 2 (this update)
 | Requirement | What was built |
 |---|---|
-| §1 Individual team PINs | A 6-digit PIN per entry. It is generated server-side, with weak patterns such as `123456` and `000000` excluded. It is shown **once** to the desk on printable slips, with an optional CSV download that is generated in the browser. The stored value is `scrypt(HMAC(pepper, PIN), salt)`, and the pepper lives only in the environment. The PIN is never returned by any API after issue, never logged, and never sent to the client again. Login = entry number + PIN + the rotating room access code. Re-issuing a PIN signs the team out everywhere. |
-| §1 Rate limiting | Per entry: 6 failures per 10 minutes. A wrong PIN and a wrong access code both count, and the entry stays locked even if the right PIN is then given. Per IP: 600 requests per minute, which leaves headroom for a venue NAT. An unknown entry and a wrong PIN return an identical response. |
+| §1 Individual team PINs | A 6-digit PIN per entry. It is generated server-side, with weak patterns such as `123456` and `000000` excluded. It is shown **once** to the desk on printable slips, with an optional CSV download that is generated in the browser. The stored value is `scrypt(HMAC(pepper, PIN), salt)`, and the pepper lives only in the environment. The PIN is never returned by any API after issue, never logged, and never sent to the client again. Login = entry number + PIN (the rotating room code was removed on 2026-10-15). Re-issuing a PIN signs the team out everywhere. |
+| §1 Rate limiting | Per entry: 6 failures per 10 minutes. Wrong PINs count, and the entry stays locked even if the right PIN is then given. Per IP: 600 requests per minute, which leaves headroom for a venue NAT. An unknown entry and a wrong PIN return an identical response. |
 | §1 Organizer auth | Unchanged and separate: email + password, a separate role whitelist, and organizer sessions that can never act as a student and vice versa. |
 | §2 Challenge pool | Upload `.xlsx`/`.csv`, review it as a **draft**, then publish. Search, filters, pagination of 50, bulk actions and an editor; delete asks for confirmation. Challenges referenced by past rounds are archived, never hard-deleted. |
 | §2 Upload details | Every sheet is read, flexible headers are mapped, and row-level errors and warnings are reported. The preview shows new, changed, unchanged and missing-from-file rows. |
@@ -147,8 +151,7 @@ Start, submit and evaluate were multi-request sequences without locks. Double-cl
 ---
 
 ## 3. Competition rules as implemented
-- **Student sign-in.** Students enter their **entry number** (`7`; `07`, `#7` and `ENTRY-007` are also accepted), their **team PIN** and the 4-digit **room access code** shown on the projector.
-  - The access code is valid for 2 minutes, plus a 20-second grace period after it rotates.
+- **Student sign-in.** Students enter their **entry number** (`7`; `07`, `#7` and `ENTRY-007` are also accepted) and their **team PIN**.
   - Only checked-in, non-disqualified entries that have a PIN can sign in.
   - One live device per entry: a device counts as live for 60 s after its last heartbeat, and the desk can release it.
 - **Start.** Before Start, the server runs the readiness check (§5.4) and refuses to start if it fails. Assignment works like this:
@@ -193,7 +196,7 @@ Start, submit and evaluate were multi-request sequences without locks. Double-cl
 | Endpoint | none | student | volunteer | judge | admin |
 |---|---|---|---|---|---|
 | `POST /api/student/login`, `POST /api/organizer/login` | public, rate-limited | | | | |
-| `GET /api/access-code`, `GET /api/display/stats` | 401 | 403 | ✓ | ✓ | ✓ |
+| `GET /api/display/stats` | 401 | 403 | ✓ | ✓ | ✓ |
 | `GET /api/admin/participants`, `POST /api/admin/attendance`, `GET /api/admin/student-logins`, `POST /api/admin/sessions/release` | 401 | 403 | ✓ | 403 | ✓ |
 | `POST /api/admin/pins` `{action:'reissue'}` (one entry) | 401 | 403 | ✓ | 403 | ✓ |
 | `POST /api/admin/pins` `{action:'issue_missing'}` (bulk) | 401 | 403 | 403 | 403 | ✓ |
@@ -336,7 +339,7 @@ Students stay signed in and return to the waiting room.
 |---|---|---|
 | `SUPABASE_URL`, `SUPABASE_SECRET_KEY` | yes | Server-only database access (service role). |
 | `SESSION_SECRET` | yes, at least 32 random characters | Signs session cookies. It also derives the Gemini-key encryption key and, if `PIN_PEPPER` is unset, the PIN pepper. Rotating it signs everyone out and invalidates **all PINs** when no `PIN_PEPPER` is set. |
-| `EVENT_SECRET` | yes | Derives the rotating 4-digit room access code. |
+| `EVENT_SECRET` | no | No longer used (the room code was removed). Safe to leave set. |
 | `PIN_PEPPER` | **recommended**, at least 32 random characters | **New.** A dedicated PIN pepper, so `SESSION_SECRET` can be rotated without invalidating PINs. Set it **before** issuing PINs; changing it later means re-issuing every PIN. |
 | `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_CONCURRENCY` | optional | The key can be set in Admin → AI Judging instead. |
 | `CRON_SECRET` | optional | Enables the scheduled evaluation worker route. |
@@ -470,7 +473,7 @@ There is no separate staging database: both free Supabase project slots are in u
 1. **Approval to apply migrations 0003 → 0007 to the Supabase project** (the one Production and Preview share). This is the only thing blocking sign-in on the preview. All four are additive and safe with the current `main`; take a backup first (§9.3).
 2. **Set `PIN_PEPPER`** in Vercel (Production + Preview, different values) before PINs are issued.
 3. **Round 2:** import the problem pack and save the settings (defaults follow your format). Confirm whether Round 1 should count at all in the final (default: no, Round 2 alone decides).
-4. **Keep the room access code in addition to the PIN?** It is currently required, and it stops a team logging in from outside the hall.
+4. ~~Keep the room access code?~~ Decided: removed (sign-in = entry number + PIN; check-in still required).
 5. **Which PS IDs are Common A and Common B?** Mark `CH-*` / `GK-001…005` as test? (Recommended.)
 6. **Workbook fixes:** the `CRW-034` duplicate ID, the 5 unrated rows and the 1 blank-category row.
 7. **Event date**, so the deployment timeline can be planned.
