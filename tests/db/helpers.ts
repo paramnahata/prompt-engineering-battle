@@ -16,8 +16,15 @@ export function resetDb(name: string) {
   execFileSync(path.join(__dirname, 'reset.sh'), [name], { env: { ...process.env, PGHOST, PGPORT: String(PGPORT) }, stdio: 'pipe' });
 }
 
+/**
+ * Supabase loads pg-safeupdate for API connections: an UPDATE or DELETE
+ * without a WHERE clause fails. Every connection here loads it too (switched
+ * off for the test's own setup SQL) and rpc() switches it on for each
+ * function call, so the functions run under the same rule as production.
+ */
 export function pool(name: string) {
-  return new Pool({ host: PGHOST, port: PGPORT, user: 'postgres', database: name, max: 20 });
+  // Runs as part of connecting, so it never overlaps the first query on that client.
+  return new Pool({ host: PGHOST, port: PGPORT, user: 'postgres', database: name, max: 20, options: '-c session_preload_libraries=safeupdate -c safeupdate.enabled=0' });
 }
 
 export async function one<T = Record<string, unknown>>(db: Pool | Client, sql: string, params: unknown[] = []): Promise<T> {
@@ -27,8 +34,19 @@ export async function one<T = Record<string, unknown>>(db: Pool | Client, sql: s
 
 export async function rpc<T = Record<string, unknown>>(db: Pool, fn: string, args: unknown[]): Promise<T> {
   const placeholders = args.map((_, i) => `$${i + 1}`).join(', ');
-  const r = await db.query(`select ${fn}(${placeholders}) as r`, args);
-  return r.rows[0].r as T;
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL safeupdate.enabled = 1');
+    const r = await client.query(`select ${fn}(${placeholders}) as r`, args);
+    await client.query('COMMIT');
+    return r.rows[0].r as T;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /** Seeds challenges, an admin and entries. Returns ids. */

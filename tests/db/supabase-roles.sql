@@ -11,3 +11,6 @@ grant usage on schema public to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
 alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
+-- Like Supabase: API connections load pg-safeupdate (UPDATE/DELETE need a WHERE clause).
+alter role authenticator set session_preload_libraries = 'safeupdate';
+alter role authenticator set statement_timeout = '8s';

@@ -42,10 +42,10 @@ export default function StudentLoginForm({ organizerSignedIn, setupIssue }: { or
     <AuthFrame aside={
       <div>
         <h1 className="font-display text-[3.4rem] font-semibold leading-[1.02] text-white" style={{ fontVariationSettings: "'wdth' 84" }}>Write the prompt that wins.</h1>
-        <p className="mt-5 max-w-md text-lg leading-8 text-slate-300">Four timed challenges. One shot at the final. Sign in with the two details on your PIN slip.</p>
+        <p className="mt-5 max-w-md text-lg leading-8 text-slate-300">Four timed challenges. One shot at the final. Check in at the registration desk — they’ll give you your team’s PIN.</p>
         <ul className="mt-8 space-y-3 text-slate-300">
-          <li className="flex gap-3"><span className="font-display text-xl font-semibold text-violet-300">1</span><span><span className="text-white">Entry number</span> — printed on your PIN slip.</span></li>
-          <li className="flex gap-3"><span className="font-display text-xl font-semibold text-violet-300">2</span><span><span className="text-white">Team PIN</span> — six digits, also on your slip. Keep it private.</span></li>
+          <li className="flex gap-3"><span className="font-display text-xl font-semibold text-violet-300">1</span><span><span className="text-white">Entry number</span> — your team’s number at the registration desk.</span></li>
+          <li className="flex gap-3"><span className="font-display text-xl font-semibold text-violet-300">2</span><span><span className="text-white">Team PIN</span> — six digits from the desk. It changes every minute, so type it straight away.</span></li>
         </ul>
       </div>
     }>
@@ -63,7 +63,7 @@ export default function StudentLoginForm({ organizerSignedIn, setupIssue }: { or
           <label htmlFor="pin" className="peb-label">Team PIN</label>
           <input id="pin" type="password" className={`${input} tracking-[0.35em] placeholder:tracking-normal`} placeholder="6 digits" inputMode="numeric" autoComplete="current-password" maxLength={6}
             value={pin} onChange={(e) => setPin(digits(e.target.value, 6))} required aria-describedby="pin-help" />
-          <p id="pin-help" className="peb-help">Lost it? The registration desk can issue a new PIN.</p>
+          <p id="pin-help" className="peb-help">Ask the registration desk for your team’s current PIN — it changes every minute.</p>
         </div>
         {error && <Alert tone="error">{error}</Alert>}
         <Button type="submit" variant="primary" className="w-full" loading={loading} disabled={!entryNumber || pin.length !== 6}>

@@ -1,7 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { Pool } from 'pg';
-import { hashPin } from '@/lib/auth/pin';
 import { Actor, accessCode, loadStackEnv, stagingPin } from './client';
 
 /**
@@ -12,6 +11,7 @@ const env = loadStackEnv();
 const PASSWORD = 'Staging-Only-Password-1';
 const admin = new Actor('admin');
 const desk = new Actor('desk');
+const judge = new Actor('judge');
 const code = () => accessCode(env.EVENT_SECRET!);
 /** Unique challenge-code prefix per run so the suite can be re-run against the same staging DB. */
 const P = `API${Date.now().toString(36).slice(-5).toUpperCase()}-`;
@@ -19,10 +19,9 @@ const P = `API${Date.now().toString(36).slice(-5).toUpperCase()}-`;
 const db = new Pool({ host: process.env.PGHOST ?? '/tmp', port: Number(process.env.PGPORT ?? 54329), user: 'postgres', database: 'peb_stage' });
 
 before(async () => {
-  // Staging DB only: make the suite re-runnable (earlier runs lock entry 150 and re-issue 153's PIN).
+  // Staging DB only: make the suite re-runnable (earlier runs lock entry 150).
   await db.query('delete from rate_limits');
-  for (const n of [150, 151, 152, 153]) await db.query('update entries set pin_hash = $2 where entry_number = $1', [n, await hashPin(stagingPin(n))]);
-  for (const [a, email] of [[admin, 'admin@staging.local'], [desk, 'desk@staging.local']] as const) {
+  for (const [a, email] of [[admin, 'admin@staging.local'], [desk, 'desk@staging.local'], [judge, 'judge@staging.local']] as const) {
     const r = await a.req('POST', '/api/organizer/login', { email, password: PASSWORD });
     assert.equal(r.status, 200, JSON.stringify(r.json));
   }
@@ -51,23 +50,27 @@ test('guessed PINs: wrong PIN = same answer as unknown entry; 6 failures lock th
   assert.equal(noCode.status, 200, 'entry number + PIN is enough (no room code)');
 });
 
-test('re-issuing a PIN signs the team out everywhere and the old PIN stops working', async () => {
+test('team PINs rotate every minute: the desk sees the current one; an old one stops working', async () => {
+  const codes = await desk.req('GET', '/api/admin/team-codes');
+  assert.equal(codes.status, 200);
+  assert.match(codes.headers.get('cache-control') ?? '', /no-store/);
+  const body = codes.json as { codes: Record<string, string>; changesAt: string; periodSeconds: number };
+  assert.equal(body.periodSeconds, 60);
+  assert.equal(body.codes['153'], stagingPin(153), 'desk shows the same PIN the server accepts');
   const s = new Actor('team 153');
-  assert.equal((await s.req('POST', '/api/student/login', { entryCode: '153', pin: stagingPin(153), accessCode: code() })).status, 200);
+  const stale = stagingPin(153, Date.now() - 3 * 60_000);
+  if (stale !== stagingPin(153)) {
+    assert.equal((await s.req('POST', '/api/student/login', { entryCode: '153', pin: stale })).status, 401, 'a PIN from 3 minutes ago is refused');
+  }
+  assert.equal((await s.req('POST', '/api/student/login', { entryCode: '153', pin: stagingPin(153) })).status, 200);
   assert.equal((await s.req('GET', '/api/student/waiting/state')).status, 200);
+  assert.equal((await s.req('GET', '/api/admin/team-codes')).status, 403, 'students never see PINs');
+  assert.equal((await judge.req('GET', '/api/admin/team-codes')).status, 403, 'judges never see PINs');
   const list = await desk.req('GET', '/api/admin/participants');
-  const e153 = (list.json.entries as { id: string; entry_number: number }[]).find((e) => e.entry_number === 153)!;
-  const r = await desk.req('POST', '/api/admin/pins', { action: 'reissue', entryId: e153.id });
-  const newPin = (r.json.issued as { pin: string }[])[0]!.pin;
-  assert.equal((await s.req('GET', '/api/student/waiting/state')).status, 401, 'old session revoked');
-  const old = await new Actor('old').req('POST', '/api/student/login', { entryCode: '153', pin: stagingPin(153), accessCode: code() });
-  assert.equal(old.status, 401);
-  const fresh = await new Actor('new').req('POST', '/api/student/login', { entryCode: '153', pin: newPin, accessCode: code() });
-  assert.equal(fresh.status, 200);
+  assert.ok(!list.text.includes(stagingPin(153)), 'PINs are not part of the participant listing');
 });
 
-test('volunteers can re-issue one PIN but cannot bulk-generate, reset, edit entries or touch the pool', async () => {
-  assert.equal((await desk.req('POST', '/api/admin/pins', { action: 'issue_missing' })).status, 403);
+test('volunteers cannot reset, edit entries or touch the pool', async () => {
   assert.equal((await desk.req('POST', '/api/admin/competition/reset', { confirm: 'RESET COMPETITION' })).status, 403);
   assert.equal((await desk.req('PATCH', '/api/admin/challenges', { action: 'set_common', slot: 1, id: null })).status, 403);
   assert.equal((await desk.req('POST', '/api/admin/participants', { members: [{ full_name: 'X' }] })).status, 403);

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { teamCodeFor, teamCodeKey, teamCodeWindow } from '@/lib/auth/team-code';
 
 /** Minimal cookie-jar HTTP client for tests against the local staging stack. */
 export const BASE = process.env.APP_URL ?? 'http://127.0.0.1:3100';
@@ -52,7 +53,7 @@ export function signToken(secret: string, claims: Record<string, unknown>) {
 
 export const COOKIE = '__Host-peb_session';
 
-/** Same formula as tests/stack/seed-staging.ts — synthetic staging PINs only. */
-export function stagingPin(n: number): string {
-  return String((n * 7919 + 104729) % 1_000_000).padStart(6, '0');
+/** The team's current rotating PIN (changes every 60 s), derived like the app does from the staging secrets. */
+export function stagingPin(n: number, nowMs = Date.now()): string {
+  return teamCodeFor(n, teamCodeWindow(nowMs), teamCodeKey(loadStackEnv()));
 }

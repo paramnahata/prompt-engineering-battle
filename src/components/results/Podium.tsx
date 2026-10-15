@@ -1,6 +1,9 @@
 import { Trophy, Medal } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
 
+/** The event declares two winners: 1st and 2nd place. */
+export const WINNER_PLACES = 2;
+
 export interface Winner { rank: number; entryNumber: number | null; teamName: string | null; members: string[]; score?: number | null; you?: boolean }
 
 const PLACE: Record<number, { label: string; ring: string; text: string; height: string }> = {
@@ -9,11 +12,11 @@ const PLACE: Record<number, { label: string; ring: string; text: string; height:
   3: { label: '3rd place', ring: 'border-orange-400/40 bg-orange-500/[0.06]', text: 'text-orange-200', height: 'sm:min-h-[11rem]' },
 };
 
-/** Top-3 podium. Teams that tie share a place (both are shown). Order on wide screens: 2 · 1 · 3. */
+/** Winners podium (1st and 2nd). Teams that tie share a place (both are shown). Order on wide screens: 2 · 1. */
 export function Podium({ winners, size = 'md', showScore = true }: { winners: Winner[]; size?: 'md' | 'lg'; showScore?: boolean }) {
-  const top = winners.filter((w) => w.rank >= 1 && w.rank <= 3);
+  const top = winners.filter((w) => w.rank >= 1 && w.rank <= WINNER_PLACES);
   if (!top.length) return null;
-  const places = [2, 1, 3].filter((p) => top.some((w) => w.rank === p));
+  const places = [2, 1, 3].filter((p) => p <= WINNER_PLACES && top.some((w) => w.rank === p));
   const lg = size === 'lg';
   return (
     <div className={cn('grid items-end gap-3', places.length === 3 ? 'sm:grid-cols-3' : places.length === 2 ? 'sm:grid-cols-2' : '')}>

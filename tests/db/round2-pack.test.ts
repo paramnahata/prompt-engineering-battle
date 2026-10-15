@@ -222,5 +222,5 @@ test('browser roles cannot execute the 0007 functions', async () => {
     }
   }
   const s = await one<{ s: { version: number; missingFunctions: string[]; missingTables: string[] } }>(db, `select app_schema_status() s`);
-  assert.deepEqual(s.s, { version: 7, missingFunctions: [], missingTables: [] });
+  assert.deepEqual(s.s, { version: 8, missingFunctions: [], missingTables: [] });
 });

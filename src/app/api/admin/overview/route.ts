@@ -20,11 +20,10 @@ export async function GET() {
     const db = supabaseAdmin();
     await Promise.all([db.rpc('round1_tick'), db.rpc('round2_tick')]);
     const c = (table: string) => db.from(table).select('id', { count: 'exact', head: true });
-    const [rounds, entries, present, withPin, presentNoPin, dq, members, live, subs, subsDone, jobsQ, jobsF, jobsDone,
+    const [rounds, entries, present, dq, members, live, subs, subsDone, jobsQ, jobsF, jobsDone,
       r1Results, finalists, r2Done, finalRes, pub, pre1, pre2, activity, health, geminiStored] = await Promise.all([
       db.from('rounds').select('round_number, status, round_start_at, round_end_at, paused_at').order('round_number'),
-      c('entries'), c('entries').eq('present', true), c('entries').not('pin_hash', 'is', null),
-      c('entries').eq('present', true).is('pin_hash', null), c('entries').eq('disqualified', true), c('team_members'),
+      c('entries'), c('entries').eq('present', true), c('entries').eq('disqualified', true), c('team_members'),
       db.rpc('admin_live_participants'),
       c('submissions'), c('submissions').eq('status', 'submitted'),
       db.from('evaluation_jobs').select('id', { count: 'exact', head: true }).in('status', ['queued', 'processing']),
@@ -45,16 +44,20 @@ export async function GET() {
 
     const setup: { level: 'error' | 'warning'; message: string; href: string }[] = [];
     if (!health.ok && health.database !== 'ok') setup.push({ level: 'error', message: 'Database migrations are missing for this deployment.', href: '/admin/settings' });
-    if (health.missingRecommendedEnv.includes('PIN_PEPPER')) setup.push({ level: 'warning', message: 'PIN_PEPPER is not set; PINs depend on SESSION_SECRET.', href: '/admin/settings' });
     if (!geminiStored) setup.push({ level: 'warning', message: 'No Gemini API key is configured — AI evaluation cannot run.', href: '/admin/ai-settings' });
-    if (r1?.status === 'not_started') for (const e of p1.errors ?? []) setup.push({ level: 'error', message: `Round 1: ${e}`, href: '/admin/challenges' });
-    if (n(presentNoPin) > 0) setup.push({ level: 'warning', message: `${n(presentNoPin)} checked-in team(s) have no PIN yet.`, href: '/admin/attendance' });
+    if (r1?.status === 'not_started') {
+      for (const e of p1.errors ?? []) {
+        // Check-in happens at the desk on the day itself, so before that it is a reminder, not a fault.
+        if (/No entries are checked in/.test(e)) setup.push({ level: 'warning', message: 'On event day: check teams in at the Registration desk before starting Round 1.', href: '/admin/attendance' });
+        else setup.push({ level: 'error', message: `Round 1: ${e}`, href: '/admin/challenges' });
+      }
+    }
     if (r2?.status === 'not_started' && !p2.config?.confirmed) setup.push({ level: 'warning', message: 'Round 2 settings have not been reviewed and saved.', href: '/admin/round2' });
 
     return jsonOk({
       serverNow: new Date().toISOString(),
       rounds: { round1: r1, round2: r2 },
-      participants: { entries: n(entries), members: n(members), present: n(present), withPin: n(withPin), disqualified: n(dq) },
+      participants: { entries: n(entries), members: n(members), present: n(present), disqualified: n(dq) },
       logins: { online: liveRows.filter((r) => r.status === 'online').length, idle: liveRows.filter((r) => r.status === 'idle').length, offline: liveRows.filter((r) => r.status === 'offline').length },
       round1: { answers: n(subs), submitted: n(subsDone), evalPending: n(jobsQ), evalFailed: n(jobsF), evaluated: n(jobsDone), results: n(r1Results), ready: p1.ok ?? false },
       round2: { finalists: n(finalists), submitted: n(r2Done), configured: Boolean(p2.config?.confirmed), ready: p2.ok ?? false },

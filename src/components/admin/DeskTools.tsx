@@ -3,58 +3,6 @@
 import { useState } from 'react';
 import type { EntryVM } from './RegistrationDeskClient';
 
-export interface IssuedPin { entryId: string; entryNumber: number; teamName: string | null; members: string[]; pin: string }
-
-/**
- * Shows freshly issued PINs exactly once. Print → one slip per team;
- * CSV is generated in the browser (never sent anywhere).
- */
-export function PinSlips({ pins, onClose }: { pins: IssuedPin[]; onClose: () => void }) {
-  const [acknowledged, setAcknowledged] = useState(false);
-  const download = () => {
-    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const csv = ['Entry,Team,Members,PIN', ...pins.map((p) => [String(p.entryNumber), esc(p.teamName ?? ''), esc(p.members.join(' & ')), `="${p.pin}"`].join(','))].join('\r\n');
-    const url = URL.createObjectURL(new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8' }));
-    const a = Object.assign(document.createElement('a'), { href: url, download: `team-pins-${new Date().toISOString().slice(0, 10)}.csv` });
-    a.click();
-    URL.revokeObjectURL(url);
-    setAcknowledged(true);
-  };
-  return (
-    <div className="pin-slips fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="pins-title">
-      <style>{`@media print { body * { visibility: hidden !important; } .pin-slips, .pin-slips * { visibility: visible !important; } .pin-slips { position: absolute; inset: 0; background: white !important; color: black !important; } .pin-noprint { display: none !important; } .pin-slip { break-inside: avoid; border: 1px dashed #999 !important; color: black !important; background: white !important; } }`}</style>
-      <div className="my-6 w-full max-w-3xl rounded-2xl border border-white/10 bg-slate-950 p-6 shadow-2xl">
-        <div className="pin-noprint">
-          <h2 id="pins-title" className="text-lg font-bold">{pins.length === 1 ? `PIN for entry ${pins[0]?.entryNumber}` : `${pins.length} team PINs`}</h2>
-          <p className="mt-1 text-sm text-amber-200">
-            These PINs are shown only now — they are stored encrypted (hashed) and can&apos;t be displayed again. Give each team its own slip.
-            If a PIN is lost, issue a new one from the desk.
-          </p>
-          {pins.length === 0 && <p className="mt-3 text-sm text-muted">No PINs were issued (every entry already had one).</p>}
-        </div>
-        <div className={`mt-4 grid gap-3 ${pins.length > 1 ? 'sm:grid-cols-2' : ''}`}>
-          {pins.map((p) => (
-            <div key={p.entryId} className="pin-slip rounded-xl border border-white/15 p-4">
-              <div className="text-xs text-muted">Prompt Engineering Battle · Team login</div>
-              <div className="mt-2 flex items-end justify-between gap-3">
-                <div><div className="text-xs text-muted">Entry number</div><div className="text-3xl font-bold tabular-nums">{p.entryNumber}</div></div>
-                <div className="text-right"><div className="text-xs text-muted">Team PIN</div><div className="font-mono text-3xl font-bold tracking-[0.25em]">{p.pin}</div></div>
-              </div>
-              <div className="mt-2 text-sm">{p.teamName || 'Individual'} — {p.members.join(', ')}</div>
-              <div className="mt-1 text-[11px] text-muted">Keep this private. You also need the 4-digit code shown on the screen.</div>
-            </div>
-          ))}
-        </div>
-        <div className="pin-noprint mt-5 flex flex-wrap items-center justify-end gap-2">
-          {pins.length > 0 && <button className="peb-btn-secondary" onClick={() => { window.print(); setAcknowledged(true); }}>Print slips</button>}
-          {pins.length > 1 && <button className="peb-btn-secondary" onClick={download}>Download CSV</button>}
-          <button className="peb-btn-primary" onClick={() => (acknowledged || pins.length <= 1 || window.confirm('Close without printing or downloading? These PINs cannot be shown again.')) && onClose()}>Done</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 interface MemberForm { full_name: string; email: string; phone: string; college: string; branch: string; study_year: string; gender: string; city: string }
 const emptyMember = (): MemberForm => ({ full_name: '', email: '', phone: '', college: '', branch: '', study_year: '', gender: '', city: '' });
 
@@ -90,7 +38,7 @@ export function EntryEditor({ entry, onClose, onSaved }: { entry: EntryVM | null
         body = await res.json().catch(() => ({}));
       }
       if (!res.ok) throw new Error(body.error ?? 'Could not save.');
-      onSaved(entry ? `Entry ${entry.entry_number} updated.` : `Entry ${body.entryNumber} created — issue its PIN next.`);
+      onSaved(entry ? `Entry ${entry.entry_number} updated.` : `Entry ${body.entryNumber} created. Its PIN is on the Registration desk.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save.');
     } finally {
