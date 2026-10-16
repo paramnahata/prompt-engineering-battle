@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Eye, EyeOff, KeyRound, Loader2, ShieldCheck, Trash2 } from 'lucide-react';
+import { CheckCircle2, Eye, EyeOff, KeyRound, Loader2, ShieldCheck, Trash2, Zap } from 'lucide-react';
 
-type Settings = { configured: boolean; source: 'environment' | 'admin-panel' | 'none'; environmentOverride: boolean };
+type Settings = { configured: boolean; source: 'environment' | 'admin-panel' | 'none'; environmentOverride: boolean; model?: string; models?: string[] };
 export default function GeminiSettingsClient() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [apiKey, setApiKey] = useState('');
@@ -33,6 +33,17 @@ export default function GeminiSettingsClient() {
       if (!res.ok) throw new Error(data.error || 'Unable to save the key.');
       setApiKey(''); setMessage(data.message || 'Gemini key saved.'); await refresh();
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save the key.'); }
+    finally { setBusy(false); }
+  }
+
+  async function testGemini() {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const res = await fetch('/api/admin/ai-settings', { method: 'PUT' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gemini test failed.');
+      setMessage(data.message || 'Gemini works.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Gemini test failed.'); }
     finally { setBusy(false); }
   }
 
@@ -77,6 +88,7 @@ export default function GeminiSettingsClient() {
         <button type="button" className="peb-btn-primary inline-flex items-center gap-2" onClick={saveKey} disabled={busy || apiKey.trim().length < 20 || settings?.environmentOverride}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Validate &amp; save key
         </button>
+        {settings?.configured && <button type="button" className="peb-btn-secondary inline-flex items-center gap-2" onClick={testGemini} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />} Test Gemini now</button>}
         {settings?.source === 'admin-panel' && <button type="button" className="peb-btn-secondary inline-flex items-center gap-2" onClick={removeKey} disabled={busy}><Trash2 className="h-4 w-4" /> Remove saved key</button>}
         <button type="button" className="peb-btn-secondary" onClick={() => { setError(''); setMessage(''); void refresh(); }} disabled={busy}>Refresh status</button>
       </div>
@@ -84,7 +96,7 @@ export default function GeminiSettingsClient() {
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       <div className="border-t pt-4 text-muted text-xs space-y-1">
         <p>Security: stored using AES-256-GCM encryption with SESSION_SECRET; only admin sessions can change this setting.</p>
-        <p>Model: Gemini 2.5 Flash. A successful save first validates the key with Google AI.</p>
+        <p>Models in use: {settings?.models?.length ? settings.models.join(' → backup ') : settings?.model ?? '…'} (set with GEMINI_MODEL and GEMINI_FALLBACK_MODELS in Vercel). “Test Gemini now” uses 1 request of the daily quota.</p>
       </div>
     </section>
   );
