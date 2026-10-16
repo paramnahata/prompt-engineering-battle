@@ -194,12 +194,23 @@ function EvaluationPanel({ counts, onChange }: { counts: StatusVM['counts'] | un
     try {
       for (;;) {
         if (stopRef.current) break;
-        const body = await api<{ completed: number; remaining: number; retry: number; failed: number; claimed: number }>('/api/admin/evaluations', { method: 'POST', body: { action: 'run' }, loginPath: LOGIN });
+        const body = await api<{ completed: number; remaining: number; retry: number; failed: number; claimed: number; rateLimited: { waitSeconds: number; daily: boolean; message: string } | null }>('/api/admin/evaluations', { method: 'POST', body: { action: 'run' }, loginPath: LOGIN });
         total += body.completed ?? 0;
-        setLog(`Evaluated ${total} this session · ${body.remaining} remaining${body.retry ? ` · ${body.retry} rate-limited, retrying with backoff` : ''}${body.failed ? ` · ${body.failed} failed` : ''}`);
+        const base = `Evaluated ${total} this session · ${body.remaining} remaining${body.failed ? ` · ${body.failed} failed` : ''}`;
+        setLog(base);
         onChange();
         if (!body.remaining) break;
-        if (!body.claimed) await new Promise((r) => setTimeout(r, 10_000));
+        const rl = body.rateLimited;
+        if (rl && rl.daily && rl.waitSeconds > 300) {
+          setLog(`${base} · Paused: ${rl.message}`);
+          break;
+        }
+        // Gemini asked us to slow down: wait (with a visible countdown), then carry on automatically.
+        const wait = rl ? rl.waitSeconds : body.claimed ? 0 : 10;
+        for (let s = wait; s > 0 && !stopRef.current; s--) {
+          setLog(`${base} · ${rl ? 'Gemini rate limit — ' : ''}continuing in ${s}s (nothing is lost)`);
+          await new Promise((r) => setTimeout(r, 1000));
+        }
       }
     } catch (e) {
       toast.error(errorMessage(e, 'Evaluation run failed.'));

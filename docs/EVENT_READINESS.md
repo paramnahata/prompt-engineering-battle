@@ -81,6 +81,18 @@ No mechanism exists to pick or adjust winners other than the audited Round 2 sco
 - **The projector (`/display`) shows only what the whole hall may see:** the round name, a large animated countdown with a progress bar (calm → amber under 5 minutes → red pulse under 1 minute), paused/ended states, "The twist is live" during Round 2, rotating public announcements, and — only after final results are published — an animated winners reveal (3rd, 2nd, then 1st, with confetti). It no longer shows the room code or any registration/check-in/submission counts; `/api/display/stats` no longer returns them either. Animated background, live clock, cursor hidden until the mouse moves, a Full screen button. All motion is disabled for viewers with reduced-motion settings.
 - **Room code removed.** Students sign in with **entry number + team PIN** only. The other protections stay: the entry must be checked in at the desk, one device per entry, 6 wrong PINs lock the entry for 10 minutes, per-IP limits. The code panel was removed from the desk and the `/api/access-code` endpoint deleted. `EVENT_SECRET` is no longer required.
 
+### 0.8 Gemini free-tier limits (rehearsal: 10 of 40 answers failed with HTTP 429)
+- **Cause.** The free Gemini tier allows only a few requests per minute and per day per model (Google sets the numbers per project; see aistudio.google.com/rate-limit). The evaluator sent one request per answer, 4 at a time, and marked an answer "failed" after 4 rate-limited attempts.
+- **Fix (no cost):**
+  - **One request per team** instead of one per answer: all of a team's Round 1 answers are scored in a single call (each still against its own challenge). 100 teams = about 100 requests instead of 400.
+  - **Paced requests**: at most `GEMINI_RPM` per minute (default 8), evenly spaced.
+  - **A rate limit never fails an answer.** It goes back in the queue, the run waits as long as Google asks (`retryDelay`) and continues by itself; the screen shows a countdown.
+  - **Fallback model**: when the main model's daily quota is used up, the next model in `GEMINI_FALLBACK_MODELS` (default `gemini-2.5-flash-lite`, which has its own quota) takes over automatically.
+  - If every model's daily quota is used up, the run pauses with a clear message; quotas reset at midnight US Pacific (12:30 pm IST). Nothing is lost.
+- **Verified locally** (mock Gemini with injected 429/500 and the main model's daily quota exhausted): 100 teams × 4 answers = 400 answers → 100 model requests, 400 completed, 0 failed.
+- **Remaining risk.** If Google's free daily quota for your project is below the number of teams on both models, evaluation finishes after the reset, or with a billing-enabled key (Flash-Lite for ~100 requests costs very little).
+- Already-failed answers from the rehearsal: press **Retry failed** once this version is live.
+
 ### 0.7 Fixes from the first live use (2026-10-15, migration 0008)
 - **"Could not clear participants" (HTTP 500) — root cause.** Supabase loads `pg-safeupdate` for API connections, which rejects any `UPDATE`/`DELETE` without a `WHERE` clause. Seven SQL functions used unfiltered statements (Delete all participants, Reset Competition Data, Round 2 start over, final results, clearing finalists, publishing final results). Locally they passed because the test database did not load `pg-safeupdate`. Second cause for the participants wipe: `admin_actions.entry_id` had no `ON DELETE` rule, so any audit row about a team blocked the delete.
   - Fix: 0008 re-creates those functions with explicit `where true` and makes the audit-log reference `ON DELETE SET NULL` (the audit rows are kept).

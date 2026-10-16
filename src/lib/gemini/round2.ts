@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { generateJson, GEMINI_MODEL } from '@/lib/gemini/evaluator';
+import { generateJson } from '@/lib/gemini/evaluator';
 
 /**
  * Round 2 AI evaluation (optional; enabled in Round 2 settings). Same safety
@@ -74,7 +74,7 @@ export async function evaluateRound2(input: Round2Input, fetchImpl: typeof fetch
     return { problem_understanding: 0, prompt_structure: 0, context_specificity: 0, creativity: 0, constraint_handling: 0, output_quality: 0,
       ai_subtotal: 0, flags: ['empty_prompt'], summary: 'No prompt was submitted.', model: 'none', raw: { skipped: 'empty_prompt' } };
   }
-  const { text, finishReason, usage } = await generateJson(ROUND2_SYSTEM_INSTRUCTION, buildRound2Message(input), RESPONSE_SCHEMA, fetchImpl);
+  const { text, finishReason, usage, model } = await generateJson(ROUND2_SYSTEM_INSTRUCTION, buildRound2Message(input), RESPONSE_SCHEMA, fetchImpl);
   const scored = parseRound2Response(text);
-  return { ...scored, model: GEMINI_MODEL, raw: { finishReason, usage, response: scored } };
+  return { ...scored, model, raw: { finishReason, usage, response: scored } };
 }

@@ -231,11 +231,13 @@ function Round2Evaluation() {
   const runAll = async () => {
     setRunning(true);
     try {
-      for (let i = 0; i < 30; i++) {
-        const r = await api<{ remaining: number; claimed: number }>('/api/admin/round2/evaluations', { method: 'POST', body: { action: 'run' }, loginPath: LOGIN });
+      for (let i = 0; i < 120; i++) {
+        const r = await api<{ remaining: number; claimed: number; rateLimited: { waitSeconds: number; daily: boolean; message: string } | null }>('/api/admin/round2/evaluations', { method: 'POST', body: { action: 'run' }, loginPath: LOGIN });
         await load();
         if (r.remaining === 0) break;
-        if (r.claimed === 0) await new Promise((res) => setTimeout(res, 4000));
+        if (r.rateLimited?.daily && r.rateLimited.waitSeconds > 300) { toast.error(r.rateLimited.message); return; }
+        const wait = r.rateLimited ? r.rateLimited.waitSeconds : r.claimed === 0 ? 4 : 0;
+        if (wait) await new Promise((res) => setTimeout(res, wait * 1000));
       }
       toast.success('Round 2 evaluation run finished.');
     } catch (e) {
