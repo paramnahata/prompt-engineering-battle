@@ -7,7 +7,7 @@ import { usePolling } from '@/hooks/usePolling';
 import type { Winner } from '@/components/results/Podium';
 import { cn } from '@/components/ui/cn';
 import s from './display.module.css';
-import { EventLogos } from '@/components/layout/EventLogos';
+import { MgmLogo, SwayambhuLogo } from '@/components/layout/EventLogos';
 
 type Theme = 'dark' | 'light';
 const THEME_KEY = 'peb-display-theme';
@@ -101,7 +101,7 @@ export default function DisplayScreen() {
       <div className="relative z-10 flex min-h-screen flex-col px-[4vw] py-[3.5vh]">
         <header className="flex items-center justify-between">
           <div className="flex items-center gap-5">
-            <EventLogos size="lg" />
+            <MgmLogo size="xl" tone={theme} />
             <span className="grid h-14 w-14 place-items-center rounded-2xl bg-peb-gradient font-display text-2xl font-bold text-white shadow-glow">&gt;_</span>
             <div>
               <div className="font-display text-3xl font-semibold leading-none text-white" style={{ fontVariationSettings: "'wdth' 84" }}>Prompt Engineering Battle</div>
@@ -115,6 +115,7 @@ export default function DisplayScreen() {
               <span className={s.liveDot} aria-hidden="true" />
               <span className="font-display text-2xl font-semibold tabular text-white">{clock}</span>
             </div>
+            <SwayambhuLogo size="xl" tone={theme} />
           </div>
         </header>
 
@@ -155,7 +156,6 @@ function Idle() {
   useEffect(() => { const t = setInterval(() => setI((x) => (x + 1) % TAGLINES.length), 4200); return () => clearInterval(t); }, []);
   return (
     <div className={s.enter}>
-      <EventLogos size="xl" className="mb-8 justify-center" />
       <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-violet-300/25 bg-violet-400/10 px-5 py-2 text-lg font-medium text-violet-100">
         <Sparkles className="h-5 w-5" aria-hidden="true" />Get ready
       </div>

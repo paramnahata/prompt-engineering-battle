@@ -2,32 +2,41 @@ import Image from 'next/image';
 import { cn } from '@/components/ui/cn';
 
 /**
- * MGM University and SWAYAMBHU 2026 logos. Both artworks have white
- * backgrounds, so they sit on white tiles that read well on dark and light
- * themes. Small WebP files (~11 KB and ~21 KB), served as-is (no image
- * optimizer round-trip) and cached by the browser.
+ * Event logos, transparent (no white box). Each has a variant for dark
+ * surfaces (MGM lightened; SWAYAMBHU with a thin white outline) and one for
+ * light surfaces. Placement: MGM University top-left → jnec.org,
+ * SWAYAMBHU 2026 top-right → swayambhu.jnec.org. Shown once per page.
  */
-export function EventLogos({ size = 'md', className }: { size?: 'sm' | 'md' | 'lg' | 'xl'; className?: string }) {
-  const h = { sm: 'h-9', md: 'h-12', lg: 'h-16', xl: 'h-24' }[size];
-  const pad = size === 'xl' ? 'p-2.5' : size === 'sm' ? 'p-1' : 'p-1.5';
+type Tone = 'dark' | 'light';
+const HEIGHT = { sm: 'h-10 sm:h-11', md: 'h-14 sm:h-16', lg: 'h-20', xl: 'h-24 2xl:h-28' } as const;
+type Size = keyof typeof HEIGHT;
+
+export function MgmLogo({ tone = 'dark', size = 'sm', className }: { tone?: Tone; size?: Size; className?: string }) {
   return (
-    <div className={cn('flex items-center gap-2.5', className)}>
-      <span className={cn('flex items-center rounded-lg bg-white shadow-sm', pad)}>
-        <Image src="/brand/mgmu.webp" alt="MGM University" width={360} height={205} unoptimized priority className={cn('w-auto', h)} />
-      </span>
-      <span className={cn('flex items-center rounded-lg bg-white shadow-sm', pad)}>
-        <Image src="/brand/swayambhu.webp" alt="SWAYAMBHU 2026" width={360} height={335} unoptimized priority className={cn('w-auto', h)} />
-      </span>
-    </div>
+    <a href="https://www.jnec.org/" target="_blank" rel="noopener noreferrer" aria-label="JNEC, MGM University (opens in a new tab)"
+      className={cn('inline-flex shrink-0 items-center rounded-md transition-opacity hover:opacity-85', className)}>
+      <Image src={tone === 'dark' ? '/brand/mgmu-dark.webp' : '/brand/mgmu.webp'} alt="MGM University" width={480} height={274}
+        unoptimized priority className={cn('w-auto', HEIGHT[size])} />
+    </a>
   );
 }
 
-/** "Built under JNEC, for JNEC" credit line with a link to the builder's site. */
+export function SwayambhuLogo({ tone = 'dark', size = 'sm', className }: { tone?: Tone; size?: Size; className?: string }) {
+  return (
+    <a href="https://swayambhu.jnec.org/" target="_blank" rel="noopener noreferrer" aria-label="SWAYAMBHU 2026 (opens in a new tab)"
+      className={cn('inline-flex shrink-0 items-center rounded-md transition-opacity hover:opacity-85', className)}>
+      <Image src={tone === 'dark' ? '/brand/swayambhu-dark.webp' : '/brand/swayambhu.webp'} alt="SWAYAMBHU 2026" width={480} height={447}
+        unoptimized priority className={cn('w-auto', HEIGHT[size])} />
+    </a>
+  );
+}
+
+/** "Built under JNEC, for JNEC" — the text itself links to the builder's site (no URL shown). */
 export function BuiltBy({ className }: { className?: string }) {
   return (
-    <p className={cn('text-sm text-faint', className)}>
-      Built under JNEC, for JNEC ·{' '}
-      <a href="https://paramnahata.com" target="_blank" rel="noopener noreferrer" className="text-violet-300 underline-offset-4 hover:text-violet-200 hover:underline">paramnahata.com</a>
-    </p>
+    <a href="https://paramnahata.com" target="_blank" rel="noopener noreferrer"
+      className={cn('text-sm text-faint underline-offset-4 transition-colors hover:text-violet-200 hover:underline', className)}>
+      Built under JNEC, for JNEC
+    </a>
   );
 }

@@ -6,7 +6,6 @@ import AuthFrame from '@/components/auth/AuthFrame';
 import { Alert } from '@/components/ui/Feedback';
 import { Button } from '@/components/ui/Button';
 import { timeoutSignal } from '@/lib/client/api';
-import { BuiltBy, EventLogos } from '@/components/layout/EventLogos';
 
 const digits = (v: string, n: number) => v.replace(/\D/g, '').slice(0, n);
 
@@ -44,7 +43,6 @@ export default function StudentLoginForm({ organizerSignedIn, setupIssue }: { or
   return (
     <AuthFrame aside={
       <div>
-        <EventLogos size="md" className="mb-6" />
         <h1 className="font-display text-[3.4rem] font-semibold leading-[1.02] text-white" style={{ fontVariationSettings: "'wdth' 84" }}>Write the prompt that wins.</h1>
         <p className="mt-5 max-w-md text-lg leading-8 text-slate-300">Four timed challenges. One shot at the final. Check in at the registration desk — they’ll give you your team’s PIN.</p>
         <ul className="mt-8 space-y-3 text-slate-300">
@@ -74,10 +72,6 @@ export default function StudentLoginForm({ organizerSignedIn, setupIssue }: { or
           {loading ? 'Checking…' : <>Sign in <ArrowRight className="h-4 w-4" aria-hidden="true" /></>}
         </Button>
       </form>
-      <div className="mt-8 flex flex-col items-center gap-3 border-t border-line/60 pt-5 lg:hidden">
-        <EventLogos size="sm" />
-      </div>
-      <BuiltBy className="mt-4 text-center" />
     </AuthFrame>
   );
 }

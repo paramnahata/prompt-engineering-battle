@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import LogoutButton from '@/components/auth/LogoutButton';
 import { BrandMark } from '@/components/layout/Brand';
-import { BuiltBy, EventLogos } from '@/components/layout/EventLogos';
+import { BuiltBy, MgmLogo, SwayambhuLogo } from '@/components/layout/EventLogos';
 import { ToastProvider } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 
@@ -16,8 +16,8 @@ export default function StudentShell({ entryNumber, right, below, children, wide
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[70] focus:rounded-lg focus:bg-violet-600 focus:px-3 focus:py-2 focus:text-white">Skip to content</a>
       <header className="sticky top-0 z-20 border-b border-line bg-background/95">
         <div className={cn('mx-auto flex h-16 items-center gap-3 px-4 sm:gap-4 sm:px-6', wide ? 'max-w-7xl' : 'max-w-5xl')}>
+          <MgmLogo size="sm" />
           <BrandMark href="/student/waiting" compact />
-          <EventLogos size="sm" className="hidden md:flex" />
           {nav && (
             <nav aria-label="Student" className="ml-2 hidden gap-1 sm:flex">
               <Link href="/student/waiting" className="rounded-md px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5 hover:text-white">Home</Link>
@@ -32,12 +32,12 @@ export default function StudentShell({ entryNumber, right, below, children, wide
             </span>
           )}
           <LogoutButton redirectTo="/student/login" className="whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm text-slate-400 hover:bg-white/5 hover:text-white" />
+          <SwayambhuLogo size="sm" />
         </div>
         {below}
       </header>
       <main id="main" className={cn('mx-auto px-4 py-6 sm:px-6 sm:py-8', wide ? 'max-w-7xl' : 'max-w-5xl')}>{children}</main>
-      <footer className={cn('mx-auto flex flex-col items-center gap-3 border-t border-line/60 px-4 py-6 sm:flex-row sm:justify-between sm:px-6', wide ? 'max-w-7xl' : 'max-w-5xl')}>
-        <EventLogos size="sm" />
+      <footer className={cn('mx-auto flex justify-center border-t border-line/60 px-4 py-5 sm:px-6', wide ? 'max-w-7xl' : 'max-w-5xl')}>
         <BuiltBy />
       </footer>
     </ToastProvider>
