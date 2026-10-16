@@ -1,12 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Maximize2, Megaphone, Sparkles, Trophy, Medal, CheckCircle2, PauseCircle, Zap } from 'lucide-react';
+import { Maximize2, Moon, Sun, Megaphone, Sparkles, Trophy, Medal, CheckCircle2, PauseCircle, Zap } from 'lucide-react';
 import { useServerCountdown } from '@/hooks/useServerCountdown';
 import { usePolling } from '@/hooks/usePolling';
 import type { Winner } from '@/components/results/Podium';
 import { cn } from '@/components/ui/cn';
 import s from './display.module.css';
+import { EventLogos } from '@/components/layout/EventLogos';
+
+type Theme = 'dark' | 'light';
+const THEME_KEY = 'peb-display-theme';
 
 /**
  * Projector screen. Shows only what the whole hall may see: the round, its
@@ -29,6 +33,24 @@ export default function DisplayScreen() {
   const [data, setData] = useState<DisplayData | null>(null);
   const [clock, setClock] = useState('');
   const [pointer, setPointer] = useState(false);
+  const [theme, setTheme] = useState<Theme>('dark');
+
+  // Light / dark, remembered on this computer (storage may be unavailable — then it just resets).
+  useEffect(() => {
+    try { if (window.localStorage.getItem(THEME_KEY) === 'light') setTheme('light'); } catch { /* ignore */ }
+  }, []);
+  const toggleTheme = useCallback(() => {
+    setTheme((t) => {
+      const next: Theme = t === 'dark' ? 'light' : 'dark';
+      try { window.localStorage.setItem(THEME_KEY, next); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if ((e.key === 't' || e.key === 'T') && !e.metaKey && !e.ctrlKey && !e.altKey) toggleTheme(); };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [toggleTheme]);
 
   const load = useCallback(async () => {
     const res = await fetch('/api/display/stats', { cache: 'no-store' });
@@ -73,12 +95,13 @@ export default function DisplayScreen() {
   const fullscreen = () => { void document.documentElement.requestFullscreen?.().catch(() => {}); };
 
   return (
-    <div className={s.stage} data-mood={mood} data-pointer={pointer ? 'on' : 'off'}>
+    <div className={s.stage} data-mood={mood} data-theme={theme} data-pointer={pointer ? 'on' : 'off'}>
       <Backdrop />
 
       <div className="relative z-10 flex min-h-screen flex-col px-[4vw] py-[3.5vh]">
         <header className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-5">
+            <EventLogos size="lg" />
             <span className="grid h-14 w-14 place-items-center rounded-2xl bg-peb-gradient font-display text-2xl font-bold text-white shadow-glow">&gt;_</span>
             <div>
               <div className="font-display text-3xl font-semibold leading-none text-white" style={{ fontVariationSettings: "'wdth' 84" }}>Prompt Engineering Battle</div>
@@ -86,6 +109,7 @@ export default function DisplayScreen() {
             </div>
           </div>
           <div className="flex items-center gap-6">
+            {pointer && <button type="button" onClick={toggleTheme} className="flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-sm text-slate-200 hover:bg-white/10" title="Switch light / dark (T)">{theme === 'dark' ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>}
             {pointer && <button type="button" onClick={fullscreen} className="flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-sm text-slate-200 hover:bg-white/10"><Maximize2 className="h-4 w-4" aria-hidden="true" />Full screen</button>}
             <div className="flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.04] px-5 py-2.5 backdrop-blur">
               <span className={s.liveDot} aria-hidden="true" />
@@ -131,6 +155,7 @@ function Idle() {
   useEffect(() => { const t = setInterval(() => setI((x) => (x + 1) % TAGLINES.length), 4200); return () => clearInterval(t); }, []);
   return (
     <div className={s.enter}>
+      <EventLogos size="xl" className="mb-8 justify-center" />
       <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-violet-300/25 bg-violet-400/10 px-5 py-2 text-lg font-medium text-violet-100">
         <Sparkles className="h-5 w-5" aria-hidden="true" />Get ready
       </div>

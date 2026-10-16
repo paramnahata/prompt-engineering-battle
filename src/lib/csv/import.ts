@@ -135,8 +135,13 @@ function findHeaderRow(rows: string[][]): number {
   return rows.findIndex((r) => r.some((c) => clean(c)));
 }
 
-function syntheticId(team: string, members: ImportMember[]): string {
-  const basis = [team.toLowerCase(), ...members.map((m) => `${m.full_name.toLowerCase()}|${m.email.toLowerCase()}|${m.phone}`)].join('||');
+/**
+ * Stable ID for an entry without one. Based on the member names only, so
+ * filling in a missing email, phone or team name later and re-uploading the
+ * sheet updates the same entry instead of creating a duplicate.
+ */
+function syntheticId(_team: string, members: ImportMember[]): string {
+  const basis = members.map((m) => m.full_name.toLowerCase().replace(/\s+/g, ' ').trim()).join('||');
   return 'AUTO-' + crypto.createHash('sha256').update(basis).digest('hex').slice(0, 12).toUpperCase();
 }
 
@@ -215,6 +220,8 @@ export function parseParticipantsCsv(csvText: string, overrides: ColumnMapping =
       startsNew = true;
     } else if (!groupKeysPresent) {
       startsNew = team !== '' && team.toLowerCase() !== current.team_name.toLowerCase();
+    } else if (id !== '' && id === current.registration_id && sr !== '' && sr !== currentSr && name !== '' && current.members.length >= MAX_TEAM_SIZE) {
+      startsNew = true; // a full team already has this ID: a new team whose ID was copied by mistake (fixed below)
     } else if (id !== '' && id === current.registration_id) {
       startsNew = false; // same team ID repeated on each member row
     } else if (sr !== '' && sr !== currentSr) {
@@ -324,7 +331,14 @@ export function parseParticipantsCsv(csvText: string, overrides: ColumnMapping =
     }
     const seen = idFirstSeen.get(entry.registration_id);
     if (seen !== undefined) {
-      entry.errors.push(`Row ${entry.first_row}: registration ID "${entry.registration_id}" was already used by the entry starting on row ${seen}.`);
+      // A copied ID in the sheet should not block the whole import: give this
+      // team a derived ID (same every time the sheet is uploaded) and flag it.
+      const original = entry.registration_id;
+      let n = 2;
+      while (idFirstSeen.has(`${original}-${n}`)) n += 1;
+      entry.registration_id = `${original}-${n}`;
+      entry.warnings.push(`Row ${entry.first_row}: registration ID "${original}" is also used by the entry on row ${seen}; this team was given "${entry.registration_id}". Correct the ID in the sheet if one is wrong.`);
+      idFirstSeen.set(entry.registration_id, entry.first_row);
     } else {
       idFirstSeen.set(entry.registration_id, entry.first_row);
     }

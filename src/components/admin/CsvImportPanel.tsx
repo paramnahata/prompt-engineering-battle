@@ -13,11 +13,11 @@ const MAX_BYTES = 2 * 1024 * 1024;
 interface PreviewMember { position: number; full_name: string; email: string; phone: string; college: string; branch: string; source_row: number }
 interface PreviewEntry {
   registrationId: string; registrationIdGenerated: boolean; teamName: string; firstRow: number;
-  members: PreviewMember[]; errors: string[]; warnings: string[]; alreadyImported: boolean;
+  members: PreviewMember[]; errors: string[]; warnings: string[]; alreadyImported: boolean; willUpdate?: boolean;
 }
 interface Preview {
   headers: string[]; mapping: Record<string, string>; headerRow: number; totalDataRows: number;
-  totals: { entries: number; members: number; valid: number; invalid: number; alreadyImported: number; toImport: number };
+  totals: { entries: number; members: number; valid: number; invalid: number; alreadyImported: number; toImport: number; toUpdate?: number };
   warnings: string[]; entries: PreviewEntry[];
 }
 
@@ -88,7 +88,7 @@ export default function CsvImportPanel({ onImported }: { onImported: () => void 
 
   const confirmImport = async () => {
     if (!csvText || !preview) return;
-    if (!window.confirm(`Import ${preview.totals.toImport} new entr${preview.totals.toImport === 1 ? 'y' : 'ies'}? Entry numbers continue from the highest existing number.`)) return;
+    if (!window.confirm(`Import ${preview.totals.toImport} new entr${preview.totals.toImport === 1 ? 'y' : 'ies'}${preview.totals.toUpdate ? ` and update details of ${preview.totals.toUpdate} existing team${preview.totals.toUpdate === 1 ? '' : 's'}` : ''}? Entry numbers of existing teams do not change; new teams continue from the highest number.`)) return;
     setBusy(true);
     setError(null);
     try {
@@ -102,9 +102,10 @@ export default function CsvImportPanel({ onImported }: { onImported: () => void 
         setError(body.error ?? 'Import failed.');
         return;
       }
+      const upd = body.updated ? ` Updated details of ${body.updated} existing team${body.updated === 1 ? '' : 's'}.` : '';
       setResult(body.imported
-        ? `Imported ${body.imported} entr${body.imported === 1 ? 'y' : 'ies'} as entry numbers ${body.firstEntryNumber}–${body.lastEntryNumber}${body.skippedExisting ? ` (${body.skippedExisting} already existed and were skipped)` : ''}.`
-        : 'Nothing new to import — every entry in this file already exists.');
+        ? `Imported ${body.imported} entr${body.imported === 1 ? 'y' : 'ies'} as entry numbers ${body.firstEntryNumber}–${body.lastEntryNumber}.${upd}`
+        : upd ? upd.trim() : 'Nothing new to import — every entry in this file already exists with the same details.');
       setPreview(null);
       setCsvText(null);
       setFileName(null);
@@ -153,6 +154,7 @@ export default function CsvImportPanel({ onImported }: { onImported: () => void 
               ['Members', preview.totals.members],
               ['New to import', preview.totals.toImport],
               ['Already imported', preview.totals.alreadyImported],
+              ['Details to update', preview.totals.toUpdate ?? 0],
               ['With errors', preview.totals.invalid],
             ].map(([label, n]) => (
               <div key={label as string} className="rounded-lg border border-white/10 p-2">
@@ -190,15 +192,15 @@ export default function CsvImportPanel({ onImported }: { onImported: () => void 
                         <div key={i} className={k === 'err' ? 'text-rose-300' : 'text-amber-200'}>{k === 'err' ? '✕' : '⚠'} {msg}</div>
                       ))}
                     </td>
-                    <td className="whitespace-nowrap p-2">{e.errors.length ? <span className="text-rose-300">Error</span> : e.alreadyImported ? <span className="text-muted">Exists</span> : <span className="text-emerald-300">New</span>}</td>
+                    <td className="whitespace-nowrap p-2">{e.errors.length ? <span className="text-rose-300">Error</span> : e.alreadyImported ? (e.willUpdate ? <span className="text-cyan-300">Update</span> : <span className="text-muted">Exists</span>) : <span className="text-emerald-300">New</span>}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <button className="peb-btn-primary" onClick={() => void confirmImport()} disabled={busy || preview.totals.invalid > 0 || preview.totals.toImport === 0}>
-            {busy ? 'Working…' : preview.totals.invalid > 0 ? 'Fix errors before importing' : `Import ${preview.totals.toImport} new entr${preview.totals.toImport === 1 ? 'y' : 'ies'}`}
+          <button className="peb-btn-primary" onClick={() => void confirmImport()} disabled={busy || preview.totals.invalid > 0 || (preview.totals.toImport === 0 && !preview.totals.toUpdate)}>
+            {busy ? 'Working…' : preview.totals.invalid > 0 ? 'Fix errors before importing' : preview.totals.toImport === 0 && preview.totals.toUpdate ? `Update ${preview.totals.toUpdate} team${preview.totals.toUpdate === 1 ? '' : 's'}` : `Import ${preview.totals.toImport} new entr${preview.totals.toImport === 1 ? 'y' : 'ies'}${preview.totals.toUpdate ? ` + update ${preview.totals.toUpdate}` : ''}`}
           </button>
         </div>
       )}

@@ -1,5 +1,6 @@
 'use client';
 
+import { isPasteLikeChange, logPasteBlocked } from '@/lib/client/no-paste';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Clock, Lock, MessageSquareText, Pause, Sparkles, Trophy } from 'lucide-react';
@@ -17,7 +18,7 @@ import StudentShell, { StudentCenter } from './StudentShell';
 interface R2State {
   serverNow: string; eligible: boolean; roundStatus: string; roundEndAt?: string | null; pausedAt?: string | null; state?: string;
   twistEnabled?: boolean; limits?: { promptWords: number; outputChars: number; rationaleWords: number };
-  problem?: { code: string | null; title: string; statement: string; instructions: string | null; constraints: string | null } | null;
+  problem?: { title: string; statement: string; instructions: string | null; constraints: string | null } | null;
   twist?: { title: string; description: string; revealedAt: string } | null;
   initialPrompt?: string | null; initialOutput?: string | null; finalPrompt?: string | null; finalOutput?: string | null; rationale?: string | null;
   initialSubmittedAt?: string | null; finalSubmittedAt?: string | null; submissionRef?: string | null;
@@ -64,7 +65,7 @@ export default function Round2Arena({ entryNumber }: { entryNumber: number | nul
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         <div className="space-y-5">
           <section className="peb-panel p-5" aria-labelledby="r2-problem">
-            <div className="text-sm text-muted">Final problem{s.problem?.code ? ` · ${s.problem.code}` : ''}</div>
+            <div className="text-sm text-muted">Final problem</div>
             <h1 id="r2-problem" className="mt-1 text-2xl font-semibold text-white">{s.problem?.title}</h1>
             <p className="mt-3 whitespace-pre-wrap leading-7 text-slate-200">{s.problem?.statement}</p>
             {s.problem?.instructions && <div className="mt-5"><h2 className="text-sm font-semibold text-white">Instructions</h2><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-300">{s.problem.instructions}</p></div>}
@@ -182,9 +183,10 @@ function Editor({ stage, s, onChanged }: { stage: Stage; s: R2State; onChanged: 
   }, [save]);
 
   const label = { saved: 'All changes saved', unsaved: 'Unsaved changes…', saving: 'Saving…', retrying: 'Connection issue — kept on this device, retrying…', error: 'Not saved' }[save];
-  const blockPaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    fetch('/api/student/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_type: 'paste_blocked' }) }).catch(() => {});
+  const blockPaste = (e: React.ClipboardEvent) => { e.preventDefault(); logPasteBlocked(); };
+  const typed = (key: 'prompt' | 'rationale') => (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (isPasteLikeChange(f[key], e.target.value, e.nativeEvent)) { logPasteBlocked(); return; }
+    setF({ ...f, [key]: e.target.value });
   };
   const field = 'w-full resize-y rounded-xl border bg-background/80 p-4 leading-7 text-slate-100 placeholder:text-faint focus:outline-none focus:ring-2';
 
@@ -197,7 +199,7 @@ function Editor({ stage, s, onChanged }: { stage: Stage; s: R2State; onChanged: 
           <span className={cn('text-xs tabular', overPrompt ? 'font-semibold text-rose-300' : 'text-muted')}>{words(f.prompt)} / {limits.promptWords} words</span>
         </div>
         <textarea id="r2-prompt" className={cn(field, 'h-56', overPrompt ? 'border-rose-500/70 focus:ring-rose-500/30' : 'border-line focus:border-violet-400/60 focus:ring-violet-500/20')}
-          value={f.prompt} onChange={(e) => setF({ ...f, prompt: e.target.value })} onPaste={blockPaste} onDrop={(e) => e.preventDefault()} placeholder="Write your prompt. Typing only — pasting is disabled." />
+          value={f.prompt} onChange={typed('prompt')} onPaste={blockPaste} onDrop={(e) => e.preventDefault()} autoComplete="off" placeholder="Write your prompt. Typing only — pasting is disabled." />
       </section>
       <section className="peb-panel p-4 sm:p-5">
         <div className="mb-2 flex items-center justify-between">
@@ -214,7 +216,7 @@ function Editor({ stage, s, onChanged }: { stage: Stage; s: R2State; onChanged: 
             <span className={cn('text-xs tabular', overRationale ? 'font-semibold text-rose-300' : 'text-muted')}>{words(f.rationale)} / {limits.rationaleWords} words</span>
           </div>
           <textarea id="r2-rationale" className={cn(field, 'h-32 text-sm', overRationale ? 'border-rose-500/70' : 'border-line focus:border-violet-400/60 focus:ring-violet-500/20')}
-            value={f.rationale} onChange={(e) => setF({ ...f, rationale: e.target.value })} onPaste={blockPaste} placeholder={s.twist ? 'Explain how you adapted your prompt to the twist.' : 'Explain the choices behind your prompt.'} />
+            value={f.rationale} onChange={typed('rationale')} onPaste={blockPaste} onDrop={(e) => e.preventDefault()} placeholder={s.twist ? 'Explain how you adapted your prompt to the twist.' : 'Explain the choices behind your prompt.'} />
         </section>
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
