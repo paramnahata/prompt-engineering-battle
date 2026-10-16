@@ -11,6 +11,17 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Abort signal for slow venue networks: a request that hangs is cut off so the
+ * caller's retry / backoff can run instead of waiting minutes for the browser.
+ * (Plain AbortController so older phones without AbortSignal.timeout work too.)
+ */
+export function timeoutSignal(ms: number): AbortSignal {
+  const c = new AbortController();
+  setTimeout(() => c.abort(), ms);
+  return c.signal;
+}
+
 export async function api<T = Record<string, unknown>>(
   url: string,
   options: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown; loginPath?: string; signal?: AbortSignal } = {},
@@ -22,10 +33,10 @@ export async function api<T = Record<string, unknown>>(
       headers: options.body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
       cache: 'no-store',
-      signal: options.signal,
+      signal: options.signal ?? timeoutSignal(20_000),
     });
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') throw err;
+    if (options.signal && err instanceof DOMException && err.name === 'AbortError') throw err;
     throw new ApiError('Network problem — check your connection and try again.', 0, 'network');
   }
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;

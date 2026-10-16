@@ -1,5 +1,7 @@
 'use client';
 
+import { timeoutSignal } from '@/lib/client/api';
+import { isPasteLikeChange, logPasteBlocked } from '@/lib/client/no-paste';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useServerCountdown } from '@/hooks/useServerCountdown';
 import { useHeartbeat } from '@/hooks/useHeartbeat';
@@ -105,7 +107,7 @@ export default function Round1Arena({ entryNumber }: { entryNumber: number | nul
 
   const fetchState = useCallback(async (): Promise<StateVM | null> => {
     try {
-      const res = await fetch('/api/student/round1/state', { cache: 'no-store' });
+      const res = await fetch('/api/student/round1/state', { cache: 'no-store', signal: timeoutSignal(15_000) });
       if (res.status === 401) {
         goLogin();
         return null;
@@ -144,7 +146,7 @@ export default function Round1Arena({ entryNumber }: { entryNumber: number | nul
 
   // Lightweight round-status watcher: pause / resume / stop show up within a few seconds.
   usePolling(async () => {
-    const res = await fetch('/api/student/waiting/state', { cache: 'no-store' });
+    const res = await fetch('/api/student/waiting/state', { cache: 'no-store', signal: timeoutSignal(10_000) });
     if (res.status === 401) return goLogin();
     if (!res.ok) throw new Error('status');
     const data = await res.json();
@@ -191,6 +193,7 @@ export default function Round1Arena({ entryNumber }: { entryNumber: number | nul
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-store',
         body: JSON.stringify({ submissionId: current.id, promptText: prompt, aiOutputText: output }),
+        signal: timeoutSignal(15_000),
       });
       const body = await res.json().catch(() => ({}));
       if (seq !== saveSeq.current) return res.ok; // a newer save is in flight
@@ -285,6 +288,7 @@ export default function Round1Arena({ entryNumber }: { entryNumber: number | nul
             headers: { 'Content-Type': 'application/json' },
             cache: 'no-store',
             body: JSON.stringify({ submissionId, promptText: prompt, aiOutputText: output }),
+            signal: timeoutSignal(20_000),
           });
           const body = await res.json().catch(() => ({}));
           if (res.status === 401) return goLogin();
@@ -358,10 +362,7 @@ export default function Round1Arena({ entryNumber }: { entryNumber: number | nul
     };
   }, []);
 
-  const blockPaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    fetch('/api/student/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_type: 'paste_blocked' }) }).catch(() => {});
-  };
+  const blockPaste = (e: React.ClipboardEvent) => { e.preventDefault(); logPasteBlocked(); };
   const blockCopy = (e: React.ClipboardEvent) => e.preventDefault();
 
   if (paused) {
@@ -462,7 +463,8 @@ export default function Round1Arena({ entryNumber }: { entryNumber: number | nul
               className={cn('h-52 w-full resize-y rounded-xl border bg-background/80 p-4 leading-7 text-slate-100 placeholder:text-faint focus:outline-none focus:ring-2',
                 overWordLimit ? 'border-rose-500/70 focus:ring-rose-500/30' : 'border-line focus:border-violet-400/60 focus:ring-violet-500/20')}
               value={draftPrompt}
-              onChange={(e) => setDraftPrompt(e.target.value)}
+              onChange={(e) => { if (isPasteLikeChange(draftPrompt, e.target.value, e.nativeEvent)) { logPasteBlocked(); return; } setDraftPrompt(e.target.value); }}
+              autoComplete="off"
               onPaste={blockPaste}
               onCopy={blockCopy}
               onCut={blockCopy}

@@ -498,3 +498,13 @@ There is no separate staging database: both free Supabase project slots are in u
 5. **Which PS IDs are Common A and Common B?** Mark `CH-*` / `GK-001…005` as test? (Recommended.)
 6. **Workbook fixes:** the `CRW-034` duplicate ID, the 5 unrated rows and the 1 blank-category row.
 7. **Event date**, so the deployment timeline can be planned.
+
+## 0.9 Event-day polish (October 17)
+
+- **Problem IDs hidden from students:** every student API response drops challenge/problem codes and strips a leading ID from titles ("CRW-003: …" → "…"); Round 2 no longer shows "· P04". (`src/lib/student/hide-codes.ts`)
+- **No pasting on phones:** prompt and rationale fields also reject keyboard-clipboard inserts (Gboard/Samsung chips), drag-and-drop and any single insertion over 40 characters. The AI-output field still accepts paste. (`src/lib/client/no-paste.ts`)
+- **Slow networks:** student requests time out (10–20 s) so retries/backoff run instead of hanging; drafts are still kept on the device and resent.
+- **Wrong-PIN lockout:** if someone types wrong PINs for another team's entry number, the desk's **Release** button now also lifts the 10-minute lockout.
+- **Re-uploading the participant sheet** adds new teams *and* fills in changed/missing details of existing teams (same entry numbers; blank cells never erase). A team ID copied onto the next team becomes `ID-2` with a warning instead of blocking the import. Teams without an ID keep the same generated ID when their details are filled in.
+- **Branding:** MGM University and SWAYAMBHU 2026 logos on the home page, student pages and projector; "Built under JNEC, for JNEC · paramnahata.com".
+- **Projector:** light / dark mode (button when the mouse moves, or the **T** key; remembered on that computer).

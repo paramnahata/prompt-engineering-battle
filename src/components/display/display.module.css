@@ -109,3 +109,34 @@
   0% { opacity: 1; transform: translate3d(0, 0, 0) rotate(0deg); }
   100% { opacity: 0.9; transform: translate3d(var(--dx, 0px), 112vh, 0) rotate(var(--rot, 720deg)); }
 }
+
+/* ------------------------------------------------------------ light mode
+   For bright halls / washed-out projectors. Toggled from the screen (button
+   or the T key); remembered on this computer. */
+.stage[data-theme='light'] { background: #f6f4fb; color: #16131f; }
+.stage[data-theme='light'] .aurora { opacity: 0.35; }
+.stage[data-theme='light'] .grid { background-image: linear-gradient(rgba(30, 20, 60, 0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(30, 20, 60, 0.07) 1px, transparent 1px); }
+.stage[data-theme='light'] .spark { background: rgba(110, 80, 230, 0.6); box-shadow: 0 0 8px rgba(110, 80, 230, 0.5); }
+.stage[data-theme='light'] .titleSweep { background-image: linear-gradient(100deg, #1b1630 0%, #1b1630 35%, #6d4dff 45%, #2f6bff 50%, #1b1630 60%, #1b1630 100%); }
+.stage[data-theme='light'] .timerGlow { color: #1b1630; text-shadow: 0 0 40px rgba(139, 108, 255, 0.25); }
+.stage[data-theme='light'][data-mood='warn'] .timerGlow { color: #b45309; text-shadow: none; }
+.stage[data-theme='light'][data-mood='urgent'] .timerGlow { color: #be123c; text-shadow: none; }
+.stage[data-theme='light'] .track { background: rgba(30, 20, 60, 0.1); }
+.stage[data-theme='light'] :global(.text-white),
+.stage[data-theme='light'] :global(.text-white\/90) { color: #16131f; }
+.stage[data-theme='light'] :global(.text-slate-200),
+.stage[data-theme='light'] :global(.text-slate-300) { color: #3b3650; }
+.stage[data-theme='light'] :global(.text-muted) { color: #5f5a73; }
+.stage[data-theme='light'] :global(.text-violet-100),
+.stage[data-theme='light'] :global(.text-violet-200) { color: #5b3fd6; }
+.stage[data-theme='light'] :global(.text-emerald-200),
+.stage[data-theme='light'] :global(.text-emerald-300) { color: #047857; }
+.stage[data-theme='light'] :global(.text-amber-100),
+.stage[data-theme='light'] :global(.text-amber-200) { color: #92400e; }
+.stage[data-theme='light'] :global(.border-white\/10),
+.stage[data-theme='light'] :global(.border-white\/15) { border-color: rgba(30, 20, 60, 0.14); }
+.stage[data-theme='light'] :global(.bg-white\/\[0\.04\]),
+.stage[data-theme='light'] :global(.bg-white\/\[0\.05\]) { background-color: rgba(255, 255, 255, 0.75); }
+.stage[data-theme='light'] :global(.bg-white\/25) { background-color: rgba(30, 20, 60, 0.2); }
+.stage[data-theme='light'] :global(.bg-white\/10):hover { background-color: rgba(30, 20, 60, 0.06); }
+.stage[data-theme='light'] .first { box-shadow: 0 0 0 1px rgba(217, 160, 40, 0.6), 0 30px 100px -30px rgba(217, 160, 40, 0.5); }

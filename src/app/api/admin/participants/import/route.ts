@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase/server';
 import { MAX_CSV_BYTES, parseParticipantsCsv, type FieldKey } from '@/lib/csv/import';
 import { jsonError, jsonOk, readJson, serverError } from '@/lib/http';
 import { limitAction } from '@/lib/ops/rate-limit';
+import { applyUpdates, planUpdates } from '@/lib/csv/update-existing';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -20,9 +21,10 @@ const bodySchema = z.object({
 
 /**
  * Two-step import. The server always parses the raw CSV itself (the
- * browser's preview is never trusted). "confirm" re-parses and inserts all
- * valid, not-yet-imported entries in one transaction; re-importing the same
- * file is a no-op because registration IDs are unique.
+ * browser's preview is never trusted). "confirm" re-parses, inserts all
+ * valid, not-yet-imported entries in one transaction, and fills in changed or
+ * missing details for teams that already exist (src/lib/csv/update-existing.ts).
+ * Re-importing an unchanged file is a no-op.
  */
 export async function POST(req: NextRequest) {
   const auth = await requireApiRole(['admin']);
@@ -50,6 +52,8 @@ export async function POST(req: NextRequest) {
     }
 
     const toImport = preview.validEntries.filter((e) => !existing.has(e.registration_id));
+    const updates = await planUpdates(db, preview.validEntries.filter((e) => existing.has(e.registration_id)));
+    const updateIds = new Set(updates.map((u) => u.registrationId));
 
     if (body.data.mode === 'preview') {
       return jsonOk({
@@ -64,6 +68,7 @@ export async function POST(req: NextRequest) {
           invalid: preview.invalidEntries.length,
           alreadyImported: preview.validEntries.length - toImport.length,
           toImport: toImport.length,
+          toUpdate: updates.length,
         },
         warnings: preview.warnings,
         entries: preview.entries.slice(0, 1000).map((e) => ({
@@ -75,6 +80,7 @@ export async function POST(req: NextRequest) {
           errors: e.errors,
           warnings: e.warnings,
           alreadyImported: existing.has(e.registration_id),
+          willUpdate: updateIds.has(e.registration_id),
         })),
       });
     }
@@ -82,12 +88,17 @@ export async function POST(req: NextRequest) {
     if (preview.invalidEntries.length > 0) {
       return jsonError(`${preview.invalidEntries.length} entr${preview.invalidEntries.length === 1 ? 'y has' : 'ies have'} errors. Fix the sheet (or the column mapping) and preview again.`, 422);
     }
-    if (toImport.length === 0) return jsonOk({ ok: true, imported: 0, skippedExisting: preview.validEntries.length });
+    const updated = updates.length ? await applyUpdates(db, updates) : 0;
+    if (updated) {
+      const { error: auditError } = await db.from('admin_actions').insert({ admin_id: auth.session.userId, action: 'csv_update_existing', new_value: { updated } });
+      if (auditError) console.error('Could not write the CSV update audit event.');
+    }
+    if (toImport.length === 0) return jsonOk({ ok: true, imported: 0, updated, skippedExisting: preview.validEntries.length - updated });
 
     const payload = toImport.map((e) => ({ registration_id: e.registration_id, team_name: e.team_name, members: e.members }));
     const { data, error } = await db.rpc('import_participants', { p_entries: payload, p_admin: auth.session.userId });
     if (error) throw error;
-    return jsonOk(data);
+    return jsonOk({ ...data, updated, skippedExisting: Math.max(0, Number(data?.skippedExisting ?? 0)) + (existing.size - updated) });
   } catch (err) {
     return serverError('participant import', err, 'Import failed. Nothing was partially saved — please retry.');
   }

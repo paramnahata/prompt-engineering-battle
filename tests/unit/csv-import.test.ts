@@ -60,11 +60,13 @@ test('supports wide sheets with member-2 columns and generates stable IDs when t
   assert.notEqual(a.entries[0]!.registration_id, a.entries[1]!.registration_id);
 });
 
-test('flags an ID reused by a non-adjacent block and oversize teams', () => {
+test('an ID reused by a non-adjacent block gets a derived ID and a warning (does not block the import); oversize teams are errors', () => {
   const csv = 'ID,NAMES,Team Name\n1,A,T1\n2,B,T2\n1,C,T3\n9,D,Big\n,E,\n,F,\n,G,\n,H,\n';
   const p = parseParticipantsCsv(csv);
   const dup = p.entries.find((e) => e.members[0]?.full_name === 'C')!;
-  assert.ok(dup.errors.some((e) => e.includes('already used')));
+  assert.equal(dup.errors.length, 0);
+  assert.equal(dup.registration_id, '1-2');
+  assert.ok(dup.warnings.some((w) => w.includes('also used')));
   const big = p.entries.find((e) => e.team_name === 'Big')!;
   assert.equal(big.members.length, 5);
   assert.ok(big.errors.some((e) => e.includes('maximum team size')));

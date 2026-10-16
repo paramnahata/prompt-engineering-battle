@@ -1,3 +1,4 @@
+import { hideProblemCodes } from '@/lib/student/hide-codes';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/server';
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
     });
     if (error) throw error;
     if (!data?.ok) return rpcFailure(data ?? {});
-    return jsonOk(data);
+    return jsonOk(hideProblemCodes(data));
   } catch (err) {
     return serverError('advance', err, 'Could not submit this challenge. Retrying…');
   }

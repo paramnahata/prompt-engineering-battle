@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight, ShieldCheck } from 'lucide-react';
 import { BrandMark } from '@/components/layout/Brand';
+import { BuiltBy, EventLogos } from '@/components/layout/EventLogos';
 
 const ROUNDS = [
   { name: 'Round 1', detail: 'Four timed prompt challenges per team — two shared by everyone, two drawn for you. Every answer is scored by an AI judge against the same rubric.' },
@@ -19,6 +20,7 @@ export default function Home() {
 
         <section className="grid gap-12 pb-16 pt-16 lg:grid-cols-[1.3fr_1fr] lg:items-end lg:pt-24">
           <div>
+            <EventLogos size="lg" className="mb-6" />
             <p className="text-sm text-violet-200">SWAYAMBHU 2026</p>
             <h1 className="mt-4 font-display text-[3.4rem] font-semibold leading-[0.98] text-white sm:text-[5rem]" style={{ fontVariationSettings: "'wdth' 80" }}>
               Prompt Engineering Battle
@@ -61,7 +63,7 @@ Use one everyday comparison. No jargon.`}<span className="ml-0.5 inline-block h-
         </section>
 
         <footer className="mt-16 flex flex-col gap-2 border-t border-line py-6 text-sm text-faint sm:flex-row sm:items-center sm:justify-between">
-          <span>Prompt Engineering Battle · SWAYAMBHU 2026</span>
+          <div className="space-y-1"><span>Prompt Engineering Battle · SWAYAMBHU 2026 · MGM University</span><BuiltBy /></div>
           <span className="inline-flex items-center gap-2"><ShieldCheck className="h-4 w-4" aria-hidden="true" />Timers and scores are controlled by the server</span>
         </footer>
       </div>
