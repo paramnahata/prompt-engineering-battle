@@ -44,7 +44,10 @@ http.createServer((req, res) => {
       } catch {}
       const s = Math.min(10, 2 + (prompt.length % 9));
       let out;
-      if (keys.includes('results')) {
+      if (keys.length === 1 && keys[0] === 'ok') {
+        // Admin "Test Gemini now" connectivity check.
+        out = { ok: true };
+      } else if (keys.includes('results')) {
         // Round 1 batch: one result per answer id.
         out = { results: (msg.answers ?? []).map((a) => {
           const v = Math.min(10, 2 + (String(a.participant_prompt ?? '').length % 9));

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireApiRole } from '@/lib/auth/session';
-import { GEMINI_MODEL } from '@/lib/gemini/evaluator';
+import { GEMINI_MODEL, GEMINI_MODELS, GeminiRateLimitError, generateJson } from '@/lib/gemini/evaluator';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { hasStoredGeminiApiKey, removeGeminiApiKey, saveGeminiApiKey } from '@/lib/gemini/key-store';
 
@@ -25,6 +25,7 @@ export async function GET() {
       source: environmentConfigured ? 'environment' : savedConfigured ? 'admin-panel' : 'none',
       environmentOverride: environmentConfigured,
       model: GEMINI_MODEL,
+      models: GEMINI_MODELS,
     });
   } catch {
     return NextResponse.json({ error: 'Could not read AI configuration.' }, { status: 500 });
@@ -69,6 +70,32 @@ export async function POST(req: NextRequest) {
       ? 'Gemini validation timed out. Check your connection and try again.'
       : 'Could not validate or save the Gemini key. Check server configuration and try again.';
     return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+/** Sends one tiny scoring-style request with the configured key and reports which model answered. Uses 1 request of quota. */
+export async function PUT(req: NextRequest) {
+  const auth = await requireApiRole(['admin']);
+  if (!auth.ok) return auth.response;
+  if (!sameOrigin(req)) return NextResponse.json({ error: 'Cross-origin request blocked.' }, { status: 403 });
+  const started = Date.now();
+  try {
+    const { text, model } = await generateJson(
+      'You are a connectivity check. Reply with the requested JSON only.',
+      'Return {"ok": true}.',
+      { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' } }, required: ['ok'] },
+      fetch,
+      { maxOutputTokens: 256 },
+    );
+    const parsed = JSON.parse(text) as { ok?: unknown };
+    if (parsed.ok !== true) throw new Error('Gemini answered, but not with the expected JSON.');
+    return NextResponse.json({ ok: true, model, ms: Date.now() - started, message: `Gemini works. Answered by ${model} in ${((Date.now() - started) / 1000).toFixed(1)} s.` });
+  } catch (error) {
+    if (error instanceof GeminiRateLimitError) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: 429 });
+    }
+    const message = error instanceof Error ? error.message.slice(0, 300) : 'Gemini test failed.';
+    return NextResponse.json({ ok: false, error: message }, { status: 502 });
   }
 }
 
