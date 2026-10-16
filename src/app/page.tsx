@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight, ShieldCheck } from 'lucide-react';
 import { BrandMark } from '@/components/layout/Brand';
-import { BuiltBy, EventLogos } from '@/components/layout/EventLogos';
+import { BuiltBy, MgmLogo, SwayambhuLogo } from '@/components/layout/EventLogos';
 
 const ROUNDS = [
   { name: 'Round 1', detail: 'Four timed prompt challenges per team — two shared by everyone, two drawn for you. Every answer is scored by an AI judge against the same rubric.' },
@@ -13,14 +13,16 @@ export default function Home() {
   return (
     <main className="min-h-screen px-4 py-6 sm:px-8">
       <div className="mx-auto max-w-6xl">
-        <nav className="flex items-center justify-between">
-          <BrandMark />
-          <Link href="/organizer/login" className="rounded-md px-3 py-1.5 text-sm text-slate-400 hover:bg-white/5 hover:text-white">Organizer sign in</Link>
+        <nav className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-4"><MgmLogo size="md" /><span className="hidden sm:block"><BrandMark /></span></div>
+          <div className="flex items-center gap-3">
+            <Link href="/organizer/login" className="hidden rounded-md px-3 py-1.5 text-sm text-slate-400 hover:bg-white/5 hover:text-white sm:block">Organizer sign in</Link>
+            <SwayambhuLogo size="md" />
+          </div>
         </nav>
 
         <section className="grid gap-12 pb-16 pt-16 lg:grid-cols-[1.3fr_1fr] lg:items-end lg:pt-24">
           <div>
-            <EventLogos size="lg" className="mb-6" />
             <p className="text-sm text-violet-200">SWAYAMBHU 2026</p>
             <h1 className="mt-4 font-display text-[3.4rem] font-semibold leading-[0.98] text-white sm:text-[5rem]" style={{ fontVariationSettings: "'wdth' 80" }}>
               Prompt Engineering Battle
