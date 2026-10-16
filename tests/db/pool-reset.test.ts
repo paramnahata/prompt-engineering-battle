@@ -40,7 +40,7 @@ test('preflight: commons must be approved; easy/unrated/test/review are excluded
   assert.equal(p.slot3Eligible, 14);
   await db.query(`update entries set pin_hash = null where entry_number = 1`);
   p = await rpc(db, 'round1_preflight', []);
-  assert.ok((p.warnings as string[]).some((w) => /no PIN/.test(w)));
+  assert.ok(!(p.warnings as string[]).some((w) => /no PIN/.test(w)), 'rotating team PINs: no warning about stored PINs (0008)');
   await db.query(`update entries set pin_hash = 'h' where entry_number = 1`);
 });
 
@@ -142,6 +142,7 @@ test('reset is refused while running, requires the phrase, and is serialized wit
 });
 
 test('participant wipe cannot race a round start (review finding P1)', async () => {
+  const saved = await one<{ e: unknown; m: unknown }>(db, `select (select json_agg(e) from entries e) e, (select json_agg(m) from team_members m) m`);
   const results = await Promise.all([control('start'), rpc<R>(db, 'clear_participants', [ids.adminId, 'DELETE ALL PARTICIPANTS'])]);
   const state = await one<{ status: string; a: number; e: number }>(db, `select status, (select count(*)::int from challenge_assignments) a, (select count(*)::int from entries) e from rounds where round_number = 1`);
   assert.ok(!(state.status === 'running' && state.a === 0), `inconsistent: ${JSON.stringify(state)} ${JSON.stringify(results)}`);
@@ -149,6 +150,11 @@ test('participant wipe cannot race a round start (review finding P1)', async () 
     assert.equal(results[1].code, 'competition_data');
     await control('stop');
     await rpc(db, 'competition_reset', [ids.adminId, 'RESET COMPETITION']);
+  }
+  if (state.e === 0) {
+    // The wipe won the race: put the same entries back so later tests are independent of the race outcome.
+    await db.query(`insert into entries select * from json_populate_recordset(null::entries, $1::json)`, [JSON.stringify(saved.e)]);
+    await db.query(`insert into team_members select * from json_populate_recordset(null::team_members, $1::json)`, [JSON.stringify(saved.m)]);
   }
 });
 

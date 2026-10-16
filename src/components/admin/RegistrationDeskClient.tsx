@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CsvImportPanel from './CsvImportPanel';
-import { EntryEditor, PinSlips, type IssuedPin } from './DeskTools';
+import { EntryEditor } from './DeskTools';
 import { usePolling } from '@/hooks/usePolling';
 import { matchesFilter, searchParticipants } from '@/lib/participant-search';
 
@@ -88,30 +88,8 @@ export default function RegistrationDeskClient({ canImport = false }: { canImpor
   }, [toast]);
 
   const presentCount = entries?.filter((e) => e.present).length ?? 0;
-  const withoutPin = entries?.filter((e) => !e.pin_set_at).length ?? 0;
-  const [issued, setIssued] = useState<IssuedPin[] | null>(null);
   const [editing, setEditing] = useState<EntryVM | 'new' | null>(null);
-  const [issuing, setIssuing] = useState(false);
-
-  const issuePins = async (entry?: EntryVM) => {
-    const msg = entry
-      ? `Issue a NEW PIN for entry ${entry.entry_number}? ${entry.pin_set_at ? 'The old PIN stops working and the team is signed out.' : ''}`
-      : `Generate PINs for the ${withoutPin} entr${withoutPin === 1 ? 'y' : 'ies'} without one? They are shown once — print or download them before closing.`;
-    if (!window.confirm(msg)) return;
-    setIssuing(true);
-    try {
-      const res = await fetch('/api/admin/pins', { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
-        body: JSON.stringify(entry ? { action: 'reissue', entryId: entry.id } : { action: 'issue_missing' }) });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'Could not issue PINs.');
-      setIssued(body.issued ?? []);
-      void load().catch(() => {});
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : 'Could not issue PINs.');
-    } finally {
-      setIssuing(false);
-    }
-  };
+  const pins = useTeamCodes();
 
   return (
     <div className="flex flex-col gap-6">
@@ -121,23 +99,21 @@ export default function RegistrationDeskClient({ canImport = false }: { canImpor
           <p className="text-sm text-muted">Search, check in, and manage participants.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          {entries && <p className="text-sm text-slate-300"><span className="font-semibold text-emerald-300">{presentCount}</span> of {entries.length} checked in · <span className={withoutPin ? 'text-amber-200' : ''}>{withoutPin} without PIN</span></p>}
-          {canImport && <button className="peb-btn-secondary py-2" disabled={issuing || withoutPin === 0} onClick={() => void issuePins()}>{issuing ? 'Generating…' : 'Generate missing PINs'}</button>}
+          {entries && <p className="text-sm text-slate-300"><span className="font-semibold text-emerald-300">{presentCount}</span> of {entries.length} checked in</p>}
+          <PinClock pins={pins} />
           {canImport && <button className="peb-btn-secondary py-2" onClick={() => setEditing('new')}>Add entry</button>}
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
-        <CheckInPanel entries={entries} pending={pending} onSetPresent={setPresent} onIssuePin={(e) => void issuePins(e)} onEdit={canImport ? (e) => setEditing(e) : undefined} issuing={issuing} />
+        <CheckInPanel entries={entries} pending={pending} onSetPresent={setPresent} onEdit={canImport ? (e) => setEditing(e) : undefined} pins={pins} />
       </div>
 
       {canImport && <CsvImportPanel onImported={() => void load().catch(() => {})} />}
 
       {loadError && <p className="rounded-xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-200" role="alert">{loadError} <button className="underline" onClick={() => void load().catch(() => {})}>Retry</button></p>}
 
-      <ParticipantsTable entries={entries} pending={pending} onSetPresent={setPresent} canReset={canImport} onReset={() => void load().catch(() => {})} />
-
-      {issued && <PinSlips pins={issued} onClose={() => setIssued(null)} />}
+      <ParticipantsTable entries={entries} pending={pending} onSetPresent={setPresent} canReset={canImport} onReset={() => void load().catch(() => {})} pins={pins} />
       {editing && <EntryEditor entry={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={(msg) => { setEditing(null); setToast(msg); void load().catch(() => {}); }} />}
 
       {toast && <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-sm shadow-2xl" role="status">{toast}</div>}
@@ -145,9 +121,9 @@ export default function RegistrationDeskClient({ canImport = false }: { canImpor
   );
 }
 
-function CheckInPanel({ entries, pending, onSetPresent, onIssuePin, onEdit, issuing }: {
+function CheckInPanel({ entries, pending, onSetPresent, onEdit, pins }: {
   entries: EntryVM[] | null; pending: Set<string>; onSetPresent: (e: EntryVM, p: boolean) => void;
-  onIssuePin: (e: EntryVM) => void; onEdit?: (e: EntryVM) => void; issuing: boolean;
+  onEdit?: (e: EntryVM) => void; pins: TeamCodes;
 }) {
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -241,19 +217,14 @@ function CheckInPanel({ entries, pending, onSetPresent, onIssuePin, onEdit, issu
             </span>
           </div>
           <MemberList members={sortedMembers(selected)} />
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 p-2 text-sm">
-            <span>Team PIN: {selected.pin_set_at ? <span className="text-emerald-300">issued {new Date(selected.pin_set_at).toLocaleString()}</span> : <span className="text-amber-200">not issued</span>}</span>
-            <span className="flex gap-2">
-              <button className="rounded-lg border border-white/15 px-3 py-1 text-xs hover:bg-white/5 disabled:opacity-40" disabled={issuing} onClick={() => onIssuePin(selected)}>{selected.pin_set_at ? 'Issue new PIN' : 'Issue PIN'}</button>
-              {onEdit && <button className="rounded-lg border border-white/15 px-3 py-1 text-xs hover:bg-white/5" onClick={() => onEdit(selected)}>Edit entry</button>}
-            </span>
-          </div>
+          <LivePin entryNumber={selected.entry_number} pins={pins} present={selected.present} />
+          {onEdit && <div className="mt-2 text-right"><button className="rounded-lg border border-white/15 px-3 py-1 text-xs hover:bg-white/5" onClick={() => onEdit(selected)}>Edit entry</button></div>}
           <div className="mt-4 flex flex-wrap gap-2">
             <button className="peb-btn-primary flex-1" onClick={() => onSetPresent(selected, true)} disabled={pending.has(selected.id) || selected.present}>Mark present</button>
             <button className="peb-btn-secondary flex-1" onClick={() => onSetPresent(selected, false)} disabled={pending.has(selected.id) || !selected.present}>Mark absent</button>
           </div>
           <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted">
-            <span>Students sign in with entry number <b className="text-white">{selected.entry_number}</b>, and their team PIN. One device per entry.</span>
+            <span>Students sign in with entry number <b className="text-white">{selected.entry_number}</b> and the PIN above (it changes every minute). One device per entry.</span>
             <button className="shrink-0 underline hover:text-white" onClick={() => void release(selected)}>Release device</button>
           </div>
           {releaseMsg && <p className="mt-2 text-xs text-cyan-200" role="status">{releaseMsg}</p>}
@@ -282,8 +253,8 @@ function MemberList({ members }: { members: TeamMember[] }) {
   );
 }
 
-function ParticipantsTable({ entries, pending, onSetPresent, canReset, onReset }: {
-  entries: EntryVM[] | null; pending: Set<string>; onSetPresent: (e: EntryVM, p: boolean) => void; canReset: boolean; onReset: () => void;
+function ParticipantsTable({ entries, pending, onSetPresent, canReset, onReset, pins }: {
+  entries: EntryVM[] | null; pending: Set<string>; onSetPresent: (e: EntryVM, p: boolean) => void; canReset: boolean; onReset: () => void; pins: TeamCodes;
 }) {
   const [filter, setFilter] = useState('');
   const [status, setStatus] = useState<'all' | 'present' | 'absent'>('all');
@@ -328,7 +299,7 @@ function ParticipantsTable({ entries, pending, onSetPresent, canReset, onReset }
             <thead>
               <tr className="border-b border-border text-left text-xs text-muted">
                 <th className="w-16 py-2 pr-3">Entry</th><th className="py-2 pr-3">Team</th><th className="py-2 pr-3">Member</th>
-                <th className="py-2 pr-3">Email</th><th className="py-2 pr-3">Phone</th><th className="py-2 pr-3">College / branch</th><th className="py-2 pr-3">PIN</th><th className="py-2">Attendance</th>
+                <th className="py-2 pr-3">Email</th><th className="py-2 pr-3">Phone</th><th className="py-2 pr-3">College / branch</th><th className="py-2 pr-3">PIN (live)</th><th className="py-2">Attendance</th>
               </tr>
             </thead>
             <tbody>
@@ -350,7 +321,7 @@ function ParticipantsTable({ entries, pending, onSetPresent, canReset, onReset }
                     <td className="break-all py-2.5 pr-3 text-xs text-muted">{m.email || <i>—</i>}</td>
                     <td className="whitespace-nowrap py-2.5 pr-3 text-xs text-muted">{m.phone || <i>—</i>}</td>
                     <td className="py-2.5 pr-3 text-xs text-muted">{[m.college, m.branch].filter(Boolean).join(' · ') || '—'}</td>
-                    {i === 0 && <td className="py-2.5 pr-3 text-xs" rowSpan={visible.length}>{e.pin_set_at ? <span className="text-emerald-300">Issued</span> : <span className="text-amber-200">—</span>}</td>}
+                    {i === 0 && <td className="whitespace-nowrap py-2.5 pr-3 font-mono text-base font-semibold tracking-[0.2em] text-white" rowSpan={visible.length}>{pins.codes[e.entry_number] ?? '······'}</td>}
                     {i === 0 && (
                       <td className="whitespace-nowrap py-2.5" rowSpan={visible.length}>
                         <button
@@ -370,6 +341,70 @@ function ParticipantsTable({ entries, pending, onSetPresent, canReset, onReset }
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Rotating team PINs: every entry's PIN changes every 60 seconds. The server
+// derives them; this view refetches right after each change.
+interface TeamCodes { codes: Record<number, string>; secondsLeft: number | null; period: number; error: string | null }
+
+function useTeamCodes(): TeamCodes {
+  const [state, setState] = useState<{ codes: Record<number, string>; changesAt: number; offset: number; period: number } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/team-codes', { cache: 'no-store' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? 'Could not load team PINs.');
+      setState({ codes: body.codes ?? {}, changesAt: new Date(body.changesAt).getTime(), offset: new Date(body.serverNow).getTime() - Date.now(), period: body.periodSeconds ?? 60 });
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load team PINs.');
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(t); }, []);
+  const serverNow = now + (state?.offset ?? 0);
+  const secondsLeft = state ? Math.max(0, Math.ceil((state.changesAt - serverNow) / 1000)) : null;
+  // Refetch as soon as the minute rolls over (and keep retrying every few seconds if that fails).
+  const stale = state ? serverNow >= state.changesAt + 300 : false;
+  useEffect(() => {
+    if (!stale && !error) return;
+    const t = setTimeout(() => void load(), error ? 4000 : 0);
+    return () => clearTimeout(t);
+  }, [stale, error, load]);
+  // New entries added in another tab show up within a minute anyway; also refetch every 15 s.
+  useEffect(() => { const t = setInterval(() => void load(), 15_000); return () => clearInterval(t); }, [load]);
+  return { codes: state && !stale ? state.codes : {}, secondsLeft: stale ? null : secondsLeft, period: state?.period ?? 60, error };
+}
+
+function PinClock({ pins }: { pins: TeamCodes }) {
+  if (pins.error) return <span className="text-xs text-rose-300">{pins.error}</span>;
+  return (
+    <span className="flex items-center gap-2 rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-300" title="Every team's PIN changes every minute">
+      <span className="h-2 w-2 animate-pulse rounded-full bg-violet-300" aria-hidden="true" />
+      PINs change in <b className="tabular-nums text-white">{pins.secondsLeft ?? '…'}s</b>
+    </span>
+  );
+}
+
+function LivePin({ entryNumber, pins, present }: { entryNumber: number; pins: TeamCodes; present: boolean }) {
+  const code = pins.codes[entryNumber];
+  const pct = pins.secondsLeft === null ? 0 : (pins.secondsLeft / pins.period) * 100;
+  return (
+    <div className="mt-3 rounded-xl border border-violet-400/30 bg-violet-500/[0.08] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs text-muted">Team PIN — read it to the team</div>
+          <div className="font-mono text-4xl font-bold tracking-[0.3em] text-white" aria-live="polite">{code ?? '······'}</div>
+        </div>
+        <div className="text-right text-xs text-muted">changes in<div className="text-2xl font-semibold tabular-nums text-white">{pins.secondsLeft ?? '…'}s</div></div>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-violet-400 transition-[width] duration-500" style={{ width: `${pct}%` }} /></div>
+      {!present && <p className="mt-2 text-xs text-amber-200">Mark the team present first — the PIN only works after check-in.</p>}
     </div>
   );
 }

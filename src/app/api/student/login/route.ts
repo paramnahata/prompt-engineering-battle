@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/server';
-import { verifyPin } from '@/lib/auth/pin';
+import { isTeamCodeValid } from '@/lib/auth/team-code';
 import { issueSessionCookie, readSessionClaims, SESSION_TTL_SECONDS } from '@/lib/auth/session';
 import { parseEntryNumberInput } from '@/lib/entries';
 import { clientIp, jsonError, jsonOk, readJson, serverError } from '@/lib/http';
@@ -18,21 +18,20 @@ const ACTIVE_WINDOW_SECONDS = 60;
 
 const MESSAGES: Record<string, string> = {
   rate_limited: 'Too many attempts for this entry. Wait 10 minutes, or ask the registration desk.',
-  bad_credentials: 'Entry number or PIN is incorrect.',
-  pin_not_issued: 'Your team PIN has not been issued yet — please see the registration desk.',
+  bad_credentials: 'Entry number or PIN is incorrect. The PIN changes every minute — ask the registration desk for the current one.',
   disqualified: 'This entry has been disqualified. Please see an organizer.',
   not_checked_in: 'Attendance not marked yet — please check in at the registration desk.',
   already_active: 'This entry is already signed in on another device. Close it there, or wait a minute and try again. The registration desk can also release it.',
 };
 
 /**
- * Student sign-in = entry number + team PIN. The entry must also be checked
- * in at the registration desk, and only one device per entry can be signed
- * in (both enforced in student_login). Order: rate-limit precheck → PIN
- * verified server-side with scrypt → single SQL call records failures or
- * opens the session. Unknown entries and wrong PINs are indistinguishable.
- * (The rotating room code was removed at the organizers' request; the SQL
- * function's p_code_ok parameter is therefore always true.)
+ * Student sign-in = entry number + the team's current PIN, which changes
+ * every 60 seconds (src/lib/auth/team-code.ts) and is read to the team by
+ * the registration desk. The entry must also be checked in, and only one
+ * device per entry can be signed in (both enforced in student_login).
+ * Order: rate-limit precheck → PIN checked server-side → one SQL call records
+ * failures or opens the session. Unknown entries and wrong PINs are
+ * indistinguishable. (The room code was removed, so p_code_ok is always true.)
  */
 export async function POST(req: NextRequest) {
   const body = await readJson(req, bodySchema, 4 * 1024);
@@ -47,7 +46,7 @@ export async function POST(req: NextRequest) {
     if (preErr) throw preErr;
     if (!pre?.ok) return jsonError(MESSAGES[pre?.code] ?? 'Please try again shortly.', pre?.status ?? 429, { code: pre?.code });
 
-    const pinOk = await verifyPin(body.data.pin, pre.pinHash);
+    const pinOk = isTeamCodeValid(entryNumber, body.data.pin);
     const existing = readSessionClaims();
 
     const { data, error } = await db.rpc('student_login', {

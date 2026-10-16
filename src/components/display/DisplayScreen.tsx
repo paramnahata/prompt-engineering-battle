@@ -197,18 +197,17 @@ function Ended({ isFinal }: { isFinal: boolean }) {
 
 // ---------------------------------------------------------------------------
 const PLACE = {
-  1: { label: '1st place', delay: 4.2, tone: 'text-amber-200', card: 'border-amber-300/50 bg-gradient-to-b from-amber-400/[0.16] to-amber-400/[0.03]', size: 'text-[3.6vw]', minH: 'min-h-[34vh]' },
-  2: { label: '2nd place', delay: 2.6, tone: 'text-slate-200', card: 'border-slate-200/30 bg-gradient-to-b from-slate-200/[0.10] to-transparent', size: 'text-[2.7vw]', minH: 'min-h-[27vh]' },
-  3: { label: '3rd place', delay: 1.2, tone: 'text-orange-200', card: 'border-orange-300/35 bg-gradient-to-b from-orange-400/[0.12] to-transparent', size: 'text-[2.5vw]', minH: 'min-h-[23vh]' },
+  1: { label: 'Winner · 1st place', delay: 3.4, tone: 'text-amber-200', card: 'border-amber-300/50 bg-gradient-to-b from-amber-400/[0.16] to-amber-400/[0.03]', size: 'text-[3.6vw]', minH: 'min-h-[34vh]' },
+  2: { label: 'Winner · 2nd place', delay: 1.6, tone: 'text-slate-200', card: 'border-slate-200/30 bg-gradient-to-b from-slate-200/[0.10] to-transparent', size: 'text-[2.7vw]', minH: 'min-h-[27vh]' },
 } as const;
 
 function WinnersReveal({ winners }: { winners: Winner[] }) {
-  const order = ([2, 1, 3] as const).filter((p) => winners.some((w) => w.rank === p));
+  const order = ([2, 1] as const).filter((p) => winners.some((w) => w.rank === p));
   return (
     <div className="w-full">
       <Confetti />
       <h1 className={cn('font-display text-[5vw] font-semibold leading-none', s.titleSweep, s.reveal)}>And the winners are…</h1>
-      <div className="mx-auto mt-[6vh] grid max-w-[88vw] grid-cols-[1fr_1.3fr_1fr] items-end gap-[2vw]">
+      <div className="mx-auto mt-[6vh] grid max-w-[72vw] grid-cols-[1fr_1.3fr] items-end gap-[3vw]">
         {order.map((p) => {
           const meta = PLACE[p];
           const teams = winners.filter((w) => w.rank === p);
@@ -237,7 +236,7 @@ function WinnersReveal({ winners }: { winners: Winner[] }) {
 const CONFETTI_COLORS = ['#8B6CFF', '#3D7EFF', '#FFD166', '#FF7A59', '#5EEAD4', '#F472B6', '#FFFFFF'];
 function Confetti() {
   const pieces = useMemo(() => Array.from({ length: 120 }, (_, i) => ({
-    left: (i * 53) % 100, delay: 4.2 + ((i * 13) % 40) / 10, duration: 4 + ((i * 7) % 30) / 10,
+    left: (i * 53) % 100, delay: 3.4 + ((i * 13) % 40) / 10, duration: 4 + ((i * 7) % 30) / 10,
     color: CONFETTI_COLORS[i % CONFETTI_COLORS.length], dx: ((i % 9) - 4) * 40, rot: 360 + (i % 5) * 180, w: 6 + (i % 4) * 2, h: 10 + (i % 3) * 5, round: i % 4 === 0,
   })), []);
   return (

@@ -28,7 +28,8 @@ test('student login: checks code, PIN, existence, attendance and disqualificatio
   assert.equal((await login(99)).code, 'bad_credentials', 'unknown entry looks exactly like a wrong PIN');
   await db.query(`update entries set pin_hash = null where entry_number = 6`);
   await db.query(`update entries set present = true where entry_number = 6`);
-  assert.equal((await login(6)).code, 'pin_not_issued');
+  assert.equal((await login(6)).ok, true, 'rotating team PINs: no stored PIN is needed (0008)');
+  await db.query(`update auth_sessions set ended_at = now(), end_reason = 'test' where entry_id = (select id from entries where entry_number = 6) and ended_at is null`);
   await db.query(`update entries set pin_hash = 'test-hash', present = false where entry_number = 6`);
   assert.equal((await login(6)).code, 'not_checked_in');
   assert.equal((await login(5)).code, 'disqualified');
@@ -36,7 +37,7 @@ test('student login: checks code, PIN, existence, attendance and disqualificatio
   assert.equal(ok.ok, true);
   assert.equal(ok.entry_number, 1);
   const log = await one<{ n: number }>(db, `select count(*)::int n from activity_logs where event_type = 'login'`);
-  assert.equal(log.n, 1);
+  assert.equal(log.n, 2, 'entry 6 and entry 1');
 });
 
 test('one live device per entry; same browser re-login is idempotent; stale sessions are superseded', async () => {

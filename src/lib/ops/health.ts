@@ -9,8 +9,8 @@ import { isSchemaMissingError } from '@/lib/db-errors';
  * health check can't be used to hammer the database.
  */
 export const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_SECRET_KEY', 'SESSION_SECRET'] as const;
-export const RECOMMENDED_ENV = ['PIN_PEPPER'] as const;
-export const EXPECTED_SCHEMA_VERSION = 7;
+export const RECOMMENDED_ENV: readonly string[] = [];
+export const EXPECTED_SCHEMA_VERSION = 8;
 
 export interface Health {
   ok: boolean;

@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { requireApiRole, ORGANIZER_ROLES } from '@/lib/auth/session';
 import { jsonOk, serverError } from '@/lib/http';
+import { WINNER_PLACES } from '@/components/results/Podium';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +28,7 @@ export async function GET() {
     if (finalPub?.published) {
       const { data } = await db.from('final_results')
         .select('rank, final_score, entry:entries(entry_number, team_name, team_members(member_position, full_name))')
-        .lte('rank', 3).order('rank').limit(12);
+        .lte('rank', WINNER_PLACES).order('rank').limit(12);
       winners = (data ?? []).map((r) => {
         const e = (Array.isArray(r.entry) ? r.entry[0] : r.entry) as { entry_number: number; team_name: string | null; team_members: { member_position: number; full_name: string }[] } | null;
         return { rank: r.rank, entryNumber: e?.entry_number ?? null, teamName: e?.team_name ?? null,

@@ -14,10 +14,10 @@ interface EntryVM {
   id: string; entry_number: number; registration_id: string; team_name: string | null; is_team: boolean; present: boolean; disqualified: boolean; pin_set_at?: string | null;
   team_members: { member_position: number; full_name: string; email: string | null; phone: string | null; college?: string | null }[];
 }
-type Filter = 'all' | 'present' | 'absent' | 'no_pin' | 'disqualified';
+type Filter = 'all' | 'present' | 'absent' | 'disqualified';
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'all', label: 'All' }, { value: 'present', label: 'Checked in' }, { value: 'absent', label: 'Not checked in' },
-  { value: 'no_pin', label: 'No PIN' }, { value: 'disqualified', label: 'Disqualified' },
+  { value: 'disqualified', label: 'Disqualified' },
 ];
 const PAGE = 50;
 
@@ -38,7 +38,6 @@ export default function EntriesListClient() {
   const filtered = useMemo(() => (entries ?? []).filter((e) => {
     if (filter === 'present' && !e.present) return false;
     if (filter === 'absent' && e.present) return false;
-    if (filter === 'no_pin' && e.pin_set_at) return false;
     if (filter === 'disqualified' && !e.disqualified) return false;
     return matchesFilter(e, query);
   }), [entries, query, filter]);
@@ -53,10 +52,9 @@ export default function EntriesListClient() {
           <a href="/api/admin/export?type=participants" download className="peb-btn-secondary"><Download className="h-4 w-4" aria-hidden="true" />Export CSV</a>
           <Link href="/admin/attendance" className="peb-btn-secondary">Registration desk</Link>
         </>} />
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3">
         <Stat label="Teams" value={entries ? all.length : undefined} hint={entries ? `${all.reduce((a, e) => a + e.team_members.length, 0)} participants` : undefined} />
         <Stat label="Checked in" value={entries ? all.filter((e) => e.present).length : undefined} />
-        <Stat label="Without PIN" value={entries ? all.filter((e) => !e.pin_set_at).length : undefined} tone={entries && all.some((e) => !e.pin_set_at && e.present) ? 'warn' : 'default'} />
         <Stat label="Disqualified" value={entries ? all.filter((e) => e.disqualified).length : undefined} />
       </div>
       {error && <Alert tone="error" className="mb-5">{error}</Alert>}
@@ -92,7 +90,6 @@ export default function EntriesListClient() {
                         <td className="text-xs text-muted">{members[0]?.email}<div>{members[0]?.phone}</div></td>
                         <td className="space-x-1 whitespace-nowrap">
                           {e.disqualified ? <Badge tone="red">Disqualified</Badge> : e.present ? <Badge tone="green">Checked in</Badge> : <Badge>Not checked in</Badge>}
-                          {!e.pin_set_at && <Badge tone="amber">No PIN</Badge>}
                         </td>
                         <td className="text-right"><Link href={`/admin/entries/${e.id}`} className="text-sm text-cyan-300 hover:text-cyan-200">Open</Link></td>
                       </tr>

@@ -11,7 +11,7 @@ import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Field, Toggle } from '@/components/ui/Field';
 import { Tabs, TabsContent, TabsList } from '@/components/ui/Tabs';
 import { useToast } from '@/components/ui/Toast';
-import { Podium } from '@/components/results/Podium';
+import { Podium, WINNER_PLACES } from '@/components/results/Podium';
 
 const LOGIN = organizerLogin('/admin/results');
 type Scope = 'round1' | 'final';
@@ -195,7 +195,7 @@ function FinalResults({ pub, onPublished }: { pub: PubVM | null; onPublished: ()
         </Panel>
         {rows && rows.length > 0 && (
           <Panel title="Winners" description={pub?.settings?.final?.published ? 'Published — students and the projector show this.' : 'Not published yet. Check the ranking, then publish to declare the winners.'}>
-            <Podium winners={rows.filter((r) => r.rank <= 3).map((r) => { const e = one(r.entry); return {
+            <Podium winners={rows.filter((r) => r.rank <= WINNER_PLACES).map((r) => { const e = one(r.entry); return {
               rank: r.rank, entryNumber: e?.entry_number ?? null, teamName: e?.team_name ?? null,
               members: [...(e?.team_members ?? [])].sort((a, b) => a.member_position - b.member_position).map((m) => m.full_name), score: Number(r.final_score) }; })} />
           </Panel>

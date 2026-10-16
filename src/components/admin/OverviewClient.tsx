@@ -17,7 +17,7 @@ type Round = { status: string; round_start_at: string | null; round_end_at: stri
 interface Overview {
   serverNow: string;
   rounds: { round1: Round; round2: Round };
-  participants: { entries: number; members: number; present: number; withPin: number; disqualified: number };
+  participants: { entries: number; members: number; present: number; disqualified: number };
   logins: { online: number; idle: number; offline: number };
   round1: { answers: number; submitted: number; evalPending: number; evalFailed: number; evaluated: number; results: number; ready: boolean };
   round2: { finalists: number; submitted: number; configured: boolean; ready: boolean };
@@ -100,7 +100,7 @@ export default function OverviewClient() {
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Stat label="Registered teams" value={p?.entries} hint={p ? `${p.members} participants` : undefined} />
         <Stat label="Checked in" value={p?.present} hint={p ? `${p.entries - p.present} not yet` : undefined} />
-        <Stat label="PINs issued" value={p?.withPin} tone={p && p.present > p.withPin ? 'warn' : 'default'} />
+        <Stat label="Disqualified" value={p?.disqualified} />
         <Stat label="Online now" value={data?.logins.online} tone="good" hint={data ? `${data.logins.idle} idle` : undefined} />
         <Stat label="Answers submitted" value={data?.round1.submitted} hint={data ? `of ${data.round1.answers} assigned` : undefined} />
         <Stat label="Evaluations pending" value={data ? data.round1.evalPending : undefined} tone={data?.round1.evalFailed ? 'bad' : 'default'} hint={data?.round1.evalFailed ? `${data.round1.evalFailed} failed` : undefined} />
