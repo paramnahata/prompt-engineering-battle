@@ -6,6 +6,7 @@ import { useServerCountdown } from '@/hooks/useServerCountdown';
 import { usePolling } from '@/hooks/usePolling';
 import type { Winner } from '@/components/results/Podium';
 import { cn } from '@/components/ui/cn';
+import Image from 'next/image';
 import s from './display.module.css';
 import { MgmLogo, SwayambhuLogo } from '@/components/layout/EventLogos';
 
@@ -126,7 +127,11 @@ export default function DisplayScreen() {
             : <Countdown key={`${round.round_number}-${round.round_start_at}`} isFinal={isFinal} status={round.status} left={left} total={total} twist={isFinal && Boolean(data?.twistRevealed)} />}
         </main>
 
-        <Ticker items={data?.announcements ?? []} />
+        <div className="flex items-end gap-6">
+          <div className="min-w-0 flex-1"><Ticker items={data?.announcements ?? []} /></div>
+          {/* CVCAN Software Solution — transparent logo, light/dark variant follows the theme. */}
+          <Image src={theme === 'dark' ? '/brand/cvcan-dark.webp' : '/brand/cvcan.webp'} alt="CVCAN Software Solution" width={218} height={228} unoptimized priority className="h-[11vh] w-auto shrink-0" />
+        </div>
       </div>
     </div>
   );
