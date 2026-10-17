@@ -26,6 +26,9 @@ const NIL = '00000000-0000-0000-0000-000000000000';
 const ENDPOINTS: { method: string; path: string; body?: unknown; allow: Role[] }[] = [
   { method: 'GET', path: '/api/display/stats', allow: ['volunteer', 'judge', 'admin'] },
   { method: 'GET', path: '/api/admin/participants', allow: ['volunteer', 'admin'] },
+  { method: 'GET', path: '/api/admin/feedback', allow: ['admin'] },
+  { method: 'GET', path: '/api/admin/export?type=qualifiers', allow: ['admin'] },
+  { method: 'GET', path: '/api/student/feedback', allow: ['student'] },
   { method: 'DELETE', path: '/api/admin/participants', body: { confirm: 'nope' }, allow: ['admin'] },
   { method: 'POST', path: '/api/admin/participants/import', body: { csvText: 'NAMES\nA\n', mode: 'preview' }, allow: ['admin'] },
   { method: 'POST', path: '/api/admin/attendance', body: { entryId: NIL, present: true }, allow: ['volunteer', 'admin'] },

@@ -19,6 +19,7 @@ export const NAV: NavGroup[] = [
   { label: 'Results & comms', items: [
     { href: '/admin/results', label: 'Results', icon: 'podium', roles: ['admin'] },
     { href: '/admin/announcements', label: 'Announcements', icon: 'megaphone', roles: ['admin'] },
+    { href: '/admin/feedback', label: 'Feedback', icon: 'feedback', roles: ['admin'] },
     { href: '/display', label: 'Projector screen', icon: 'monitor', roles: ['admin', 'volunteer', 'judge'] },
   ] },
   { label: 'System', items: [

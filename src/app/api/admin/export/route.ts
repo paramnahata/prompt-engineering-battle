@@ -9,7 +9,7 @@ import { jsonError, serverError } from '@/lib/http';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
-const TYPES = ['participants', 'logins', 'round1_results', 'round1_answers', 'round2_work', 'jury_scores', 'final_results', 'audit_log'] as const;
+const TYPES = ['participants', 'logins', 'round1_results', 'qualifiers', 'feedback', 'round1_answers', 'round2_work', 'jury_scores', 'final_results', 'audit_log'] as const;
 const querySchema = z.object({ type: z.enum(TYPES) });
 type Member = { member_position: number; full_name: string; email: string | null; phone: string | null; college: string | null; branch: string | null; study_year: string | null };
 const one = <T,>(v: unknown): T | null => ((Array.isArray(v) ? v[0] : v) ?? null) as T | null;
@@ -57,6 +57,45 @@ export async function GET(req: NextRequest) {
       if (error) throw error;
       headers = ['Rank', 'Entry', 'Team', 'Score (of 200)', 'Qualified', 'Computed at'];
       rows = (data ?? []).map((r) => { const e = one<{ entry_number: number; team_name: string | null }>(r.entry); return [r.rank, e?.entry_number, e?.team_name, r.score, r.qualified ? 'yes' : 'no', r.computed_at]; });
+    } else if (type === 'qualifiers') {
+      // Top teams who qualified for Round 2 (the finalist list if it has been set, otherwise the Round 1 "qualified" flag).
+      const { data: r1 } = await db.from('rounds').select('id').eq('round_number', 1).single();
+      const [quals, results] = await Promise.all([
+        db.from('round2_qualifiers').select('entry_id, source, round1_rank, round1_score'),
+        db.from('round_results').select('entry_id, rank, score, qualified').eq('round_id', r1?.id).limit(5000),
+      ]);
+      if (quals.error) throw quals.error;
+      if (results.error) throw results.error;
+      const byEntry = new Map((results.data ?? []).map((r) => [r.entry_id, r]));
+      const list = (quals.data ?? []).length
+        ? (quals.data ?? []).map((q) => ({ entry_id: q.entry_id, rank: q.round1_rank ?? byEntry.get(q.entry_id)?.rank ?? null, score: q.round1_score ?? byEntry.get(q.entry_id)?.score ?? null, source: q.source }))
+        : (results.data ?? []).filter((r) => r.qualified).map((r) => ({ entry_id: r.entry_id, rank: r.rank, score: r.score, source: 'round1' }));
+      const ids = list.map((q) => q.entry_id);
+      const { data: ents, error } = ids.length
+        ? await db.from('entries').select('id, entry_number, registration_id, team_name, team_members(member_position, full_name, email, phone, college, branch, study_year)').in('id', ids)
+        : { data: [], error: null };
+      if (error) throw error;
+      const ent = new Map((ents ?? []).map((e) => [e.id, e]));
+      headers = ['Round 1 rank', 'Round 1 score (of 200)', 'Entry', 'Registration ID', 'Team', 'How qualified',
+        'Member 1', 'Member 1 email', 'Member 1 phone', 'Member 1 college', 'Member 1 branch', 'Member 1 year',
+        'Member 2', 'Member 2 email', 'Member 2 phone', 'Member 2 college', 'Member 2 branch', 'Member 2 year'];
+      rows = list.map((q) => {
+        const e = ent.get(q.entry_id);
+        const ms = ((e?.team_members ?? []) as Member[]).sort((a, b) => a.member_position - b.member_position);
+        const m = (i: number): Cell[] => { const x = ms[i]; return x ? [x.full_name, x.email, x.phone, x.college, x.branch, x.study_year] : ['', '', '', '', '', '']; };
+        return [q.rank, q.score, e?.entry_number, e?.registration_id, e?.team_name, q.source === 'round1' ? 'Top of Round 1' : 'Added by organizer', ...m(0), ...m(1)];
+      }).sort((x, y) => Number(x[0] ?? 1e9) - Number(y[0] ?? 1e9) || Number(x[2]) - Number(y[2]));
+    } else if (type === 'feedback') {
+      const { data, error } = await db.from('round1_feedback')
+        .select('overall_rating, system_rating, management_rating, challenge_level, join_again, liked, suggestions, submitted_at, entry:entries(entry_number, team_name, team_members(member_position, full_name))')
+        .order('submitted_at').limit(5000);
+      if (error) throw error;
+      headers = ['Entry', 'Team', 'Members', 'Overall (1-5)', 'System (1-5)', 'Management (1-5)', 'Challenges were', 'Would join again', 'Liked', 'Suggestions', 'Submitted at'];
+      rows = (data ?? []).map((f) => {
+        const e = one<{ entry_number: number; team_name: string | null; team_members: { member_position: number; full_name: string }[] }>(f.entry);
+        const names = (e?.team_members ?? []).sort((a, b) => a.member_position - b.member_position).map((m) => m.full_name).join(' & ');
+        return [e?.entry_number, e?.team_name, names, f.overall_rating, f.system_rating, f.management_rating, String(f.challenge_level).replace('_', ' '), f.join_again, f.liked, f.suggestions, f.submitted_at];
+      }).sort((x, y) => Number(x[0]) - Number(y[0]));
     } else if (type === 'round1_answers') {
       const { data, error } = await db.from('submissions')
         .select('status, submitted_at, submission_ref, prompt_text, ai_output_text, entry:entries(entry_number, team_name), assignment:challenge_assignments(position, is_common, challenge_snapshot), ai:ai_evaluations(total, summary, flags), reviews:human_reviews(new_total, reason, created_at)')
