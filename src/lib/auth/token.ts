@@ -19,8 +19,17 @@ export interface SessionClaims {
 export const SESSION_TTL_SECONDS = 60 * 60 * 12;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * HTTPS-only (Secure, __Host-) cookies in production. Set ALLOW_HTTP=true when
+ * the app is served over plain http:// (e.g. a local server on the campus
+ * network), otherwise browsers drop the cookie and sign-in never sticks.
+ */
+export function secureCookies(): boolean {
+  return process.env.NODE_ENV === 'production' && process.env.ALLOW_HTTP !== 'true';
+}
+
 export function sessionCookieName(): string {
-  return process.env.NODE_ENV === 'production' ? '__Host-peb_session' : 'peb_session';
+  return secureCookies() ? '__Host-peb_session' : 'peb_session';
 }
 
 function getSecret(): string {
