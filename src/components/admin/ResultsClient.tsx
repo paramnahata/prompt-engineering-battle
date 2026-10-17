@@ -135,7 +135,7 @@ function Round1Results({ pub, onPublished }: { pub: PubVM | null; onPublished: (
           )}
         </Panel>
         <Panel title="Ranking" description={rows.length ? `${rows.length} entries · ${qualified} qualified · computed ${new Date(rows[0]!.computed_at).toLocaleString()}` : undefined}
-          actions={<><ExportLink type="round1_results">Ranking CSV</ExportLink><ExportLink type="round1_answers">All answers CSV</ExportLink></>} bodyClassName="p-0">
+          actions={<><ExportLink type="qualifiers">Qualified teams (details) CSV</ExportLink><ExportLink type="round1_results">Ranking CSV</ExportLink><ExportLink type="round1_answers">All answers CSV</ExportLink></>} bodyClassName="p-0">
           {!data ? <div className="p-5"><SkeletonRows /></div> : rows.length === 0 ? (
             <div className="p-5"><EmptyState icon={<Trophy className="h-6 w-6" />} title="No results yet">End Round 1, let AI evaluation finish, then compute results.</EmptyState></div>
           ) : (

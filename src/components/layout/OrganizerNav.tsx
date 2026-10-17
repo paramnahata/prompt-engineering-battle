@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
-  Gauge, ClipboardCheck, Users, Swords, Library, Trophy, Gavel, Medal, Megaphone, MonitorPlay, Sparkles, KeyRound, Settings, Menu, X,
+  Gauge, ClipboardCheck, Users, Swords, Library, Trophy, Gavel, Medal, Megaphone, MonitorPlay, Sparkles, KeyRound, Settings, Menu, X, MessageSquareHeart,
 } from 'lucide-react';
 import type { NavGroup } from './nav';
 import { cn } from '@/components/ui/cn';
@@ -13,7 +13,7 @@ import { BrandMark } from './Brand';
 
 const ICONS: Record<string, typeof Gauge> = {
   gauge: Gauge, desk: ClipboardCheck, users: Users, swords: Swords, library: Library, trophy: Trophy, gavel: Gavel,
-  podium: Medal, megaphone: Megaphone, monitor: MonitorPlay, sparkles: Sparkles, key: KeyRound, settings: Settings,
+  podium: Medal, megaphone: Megaphone, monitor: MonitorPlay, sparkles: Sparkles, key: KeyRound, settings: Settings, feedback: MessageSquareHeart,
 };
 
 function NavLinks({ groups, onNavigate }: { groups: NavGroup[]; onNavigate?: () => void }) {

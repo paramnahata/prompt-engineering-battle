@@ -127,10 +127,11 @@ export default function DisplayScreen() {
             : <Countdown key={`${round.round_number}-${round.round_start_at}`} isFinal={isFinal} status={round.status} left={left} total={total} twist={isFinal && Boolean(data?.twistRevealed)} />}
         </main>
 
-        <div className="flex items-end gap-6">
-          <div className="min-w-0 flex-1"><Ticker items={data?.announcements ?? []} /></div>
-          {/* CVCAN Software Solution — transparent logo, light/dark variant follows the theme. */}
-          <Image src={theme === 'dark' ? '/brand/cvcan-dark.webp' : '/brand/cvcan.webp'} alt="CVCAN Software Solution" width={218} height={228} unoptimized priority className="h-[11vh] w-auto shrink-0" />
+        <Ticker items={data?.announcements ?? []} />
+        {/* Sponsor, bottom centre. Transparent logo; light/dark variant follows the theme. */}
+        <div className="mt-[2vh] flex items-center justify-center gap-4">
+          <span className="text-sm font-semibold uppercase tracking-[0.3em] text-muted">Our sponsor</span>
+          <Image src={theme === 'dark' ? '/brand/cvcan-dark.webp' : '/brand/cvcan.webp'} alt="CVCAN Software Solution" width={218} height={228} unoptimized priority className="h-[9vh] w-auto" />
         </div>
       </div>
     </div>

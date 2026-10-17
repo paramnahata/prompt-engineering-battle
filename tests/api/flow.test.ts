@@ -126,6 +126,27 @@ test('full Round 1 journey with pause/resume, final submit, evaluation and resul
     if (position === 4) assert.match(String(adv.json.submissionRef), new RegExp(`^R1-${entryNumber}-`));
   }
 
+  // Required feedback once all four answers are locked.
+  const need = await student.req('GET', '/api/student/feedback');
+  assert.equal(need.status, 200, JSON.stringify(need.json));
+  assert.equal(need.json.required, true);
+  const page = await student.req('GET', '/student/waiting');
+  assert.ok(page.status === 307 || page.text.includes('your feedback') || page.text.includes('/student/feedback'), `dashboard is gated (got ${page.status})`);
+  const bad = await student.req('POST', '/api/student/feedback', { overall: 5, system: 4, management: 4, challengeLevel: 'just_right', joinAgain: 'yes', liked: '' });
+  assert.equal(bad.status, 400);
+  const fb = await student.req('POST', '/api/student/feedback', { overall: 5, system: 4, management: 3, challengeLevel: 'just_right', joinAgain: 'yes', liked: 'Smooth timer', suggestions: '=HYPERLINK("x")' });
+  assert.equal(fb.status, 200, JSON.stringify(fb.json));
+  assert.equal(fb.json.stored, true);
+  const done = await student.req('GET', '/api/student/feedback');
+  assert.equal(done.json.required, false);
+  assert.equal(done.json.given, true);
+  const list = await admin.req('GET', '/api/admin/feedback');
+  const row = (list.json.rows as { entryNumber: number; overall: number; liked: string }[]).find((r) => r.entryNumber === entryNumber);
+  assert.ok(row && row.overall === 5 && row.liked === 'Smooth timer');
+  const fbCsv = await admin.req('GET', '/api/admin/export?type=feedback');
+  assert.equal(fbCsv.status, 200);
+  assert.ok(fbCsv.text.includes('Smooth timer') && fbCsv.text.includes(`'=HYPERLINK`), 'feedback CSV, formula-safe');
+
   const stop = await admin.req('POST', '/api/admin/round1/control', { action: 'stop' });
   assert.equal(stop.status, 200);
   const early = await admin.req('POST', '/api/admin/results', { qualificationPercent: 15 });
@@ -145,6 +166,9 @@ test('full Round 1 journey with pause/resume, final submit, evaluation and resul
   const board = await admin.req('GET', '/api/admin/results');
   const mine = (board.json.results as { score: number; entry: { entry_number: number } }[]).find((r) => r.entry.entry_number === entryNumber);
   assert.ok(mine && Number(mine.score) > 0, 'entry has a non-zero computed score');
+  const qCsv = await admin.req('GET', '/api/admin/export?type=qualifiers');
+  assert.equal(qCsv.status, 200);
+  assert.ok(qCsv.text.includes('Member 1 phone') && qCsv.text.includes('Round 1 rank'), 'qualified-teams CSV has contact columns');
 
   const detail = await admin.req('GET', `/api/admin/entries/${entryId}/round1`);
   const ps = detail.json.ps as { submission: { prompt_text: string; status: string }; aiEval: { model: string } | null }[];

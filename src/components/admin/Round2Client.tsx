@@ -453,7 +453,7 @@ function FinalistsTab({ locked, onChanged }: { locked: boolean; onChanged: () =>
       {locked && <Alert tone="info">Round 2 has started. You can still add a late finalist (they get their problem immediately); removing finalists requires starting Round 2 over.</Alert>}
       <div className="grid gap-5 lg:grid-cols-[1fr_22rem]">
         <Panel title="Round 1 ranking" description="Teams marked qualified come from the qualification percentage used when Round 1 results were computed."
-          actions={<Button variant="primary" size="sm" disabled={locked || !data?.ranking.length} loading={busy === 'from_round1'} onClick={() => void act('from_round1')}>Use Round 1 qualifiers</Button>} bodyClassName="p-0">
+          actions={<><a className="peb-btn-secondary peb-btn-sm" href="/api/admin/export?type=qualifiers" download>Download qualified teams</a><Button variant="primary" size="sm" disabled={locked || !data?.ranking.length} loading={busy === 'from_round1'} onClick={() => void act('from_round1')}>Use Round 1 qualifiers</Button></>} bodyClassName="p-0">
           {!data ? <div className="p-5"><SkeletonRows /></div> : data.ranking.length === 0 ? (
             <div className="p-5"><EmptyState title="No Round 1 results yet">Compute Round 1 results on the Results page, or add finalists by entry number.</EmptyState></div>
           ) : (
