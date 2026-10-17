@@ -18,7 +18,7 @@ import { supabaseAdmin } from '@/lib/supabase/server';
  */
 
 import {
-  decodeSessionToken, encodeSessionToken, sessionCookieName, SESSION_TTL_SECONDS,
+  decodeSessionToken, encodeSessionToken, secureCookies, sessionCookieName, SESSION_TTL_SECONDS,
   type Role, type SessionClaims,
 } from '@/lib/auth/token';
 
@@ -40,7 +40,7 @@ export function readSessionClaims(): SessionClaims | null {
 function setSessionCookie(claims: SessionClaims) {
   cookies().set(sessionCookieName(), encodeSessionToken(claims), {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: secureCookies(),
     sameSite: 'lax',
     path: '/',
     maxAge: claims.exp - claims.iat,
@@ -50,7 +50,7 @@ function setSessionCookie(claims: SessionClaims) {
 export function clearSessionCookie() {
   cookies().set(sessionCookieName(), '', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: secureCookies(),
     sameSite: 'lax',
     path: '/',
     maxAge: 0,
