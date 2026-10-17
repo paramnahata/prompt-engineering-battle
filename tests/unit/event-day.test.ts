@@ -75,3 +75,10 @@ test('re-upload diff: fills blanks and changes, adds a missing member, never era
   const same = parseParticipantsCsv(HEADER + '1,5001,Asha Rao,,9000000001,,FEMALE,JNEC,CSN,CSE,,\n').entries[0]!;
   assert.equal(diffEntry(stored, same), null, 'unchanged sheet → nothing to update');
 });
+
+test('placeholder cells ("-", "NA") are blank: no "-" IDs, emails or phones', () => {
+  const p = parseParticipantsCsv(HEADER + '1,-,Gita Rao,Team G,9000000011,-,FEMALE,JNEC,CSN,CSE,-,-\n,,Hari Rao,,-,NA,MALE,JNEC,CSN,CSE,-,-\n');
+  const e = p.entries[0]!;
+  assert.ok(e.registration_id_generated, 'ID "-" → generated ID');
+  assert.deepEqual(e.members.map((m) => [m.email, m.phone, m.study_year]), [['', '9000000011', ''], ['', '', '']]);
+});

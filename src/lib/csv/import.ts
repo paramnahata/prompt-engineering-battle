@@ -96,6 +96,7 @@ export interface ImportPreview {
 }
 
 export const normHeader = (v: unknown) => String(v ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+const PLACEHOLDER = /^(?:[-–—_.\s]+|n\/?a|nil|none|null)$/i;
 const clean = (v: unknown) => String(v ?? '').replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
 
 export function normalizePhone(raw: string): string {
@@ -188,7 +189,11 @@ export function parseParticipantsCsv(csvText: string, overrides: ColumnMapping =
 
   const col = (key: FieldKey) => (mapping[key] ? headers.indexOf(mapping[key]!) : -1);
   const idx = Object.fromEntries((Object.keys(ALIASES) as FieldKey[]).map((k) => [k, col(k)])) as Record<FieldKey, number>;
-  const get = (row: string[], key: FieldKey) => (idx[key] >= 0 ? clean(row[idx[key]]) : '');
+  // Placeholder cells ("-", "—", "NA", "nil"…) count as blank, so they never become an ID, email or phone.
+  const get = (row: string[], key: FieldKey) => {
+    const v = idx[key] >= 0 ? clean(row[idx[key]]) : '';
+    return PLACEHOLDER.test(v) ? '' : v;
+  };
 
   const dataRows = rows.slice(headerIndex + 1);
   if (dataRows.length > MAX_ROWS) {
